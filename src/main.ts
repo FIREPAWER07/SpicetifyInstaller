@@ -174,14 +174,18 @@ class SpicetifyInstallerApp {
       this.outputElement.textContent = ""
       this.appendOutput("Diagnosing Spicetify installation...\n\n")
 
-      // Get Spicetify location information
+      // Get Spicetify location information with hidden console
       const locationInfo = await invoke<string>("check_spicetify_location")
       this.appendOutput(locationInfo)
 
-      // Try to run spicetify directly
+      // Try to run spicetify directly with hidden console
       try {
         const output = await invoke<string>("execute_powershell_command", {
           command: "try { spicetify -v } catch { Write-Output 'Command failed' }",
+          options: {
+            windowsVerbatimArguments: true,
+            windowsHide: true
+          }
         })
         this.appendOutput("\nSpicetify version command output:\n" + output)
       } catch (error) {
@@ -193,8 +197,6 @@ class SpicetifyInstallerApp {
     } catch (error) {
       console.error("Diagnosis error:", error)
       this.appendOutput("\nDiagnosis failed: " + error)
-
-      // Still try to check versions even if diagnostic fails
       await this.checkVersions()
     }
   }

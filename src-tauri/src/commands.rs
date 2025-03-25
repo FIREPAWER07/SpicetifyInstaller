@@ -611,14 +611,15 @@ pub async fn check_spicetify_location() -> Result<String, String> {
     // Check PATH for spicetify
     result.push_str("\nChecking PATH for spicetify:\n");
     let path_check = if cfg!(target_os = "windows") {
-        Command::new("cmd")
-            .args(&["/c", "where spicetify 2>NUL"])
-            .output()
-    } else {
-        Command::new("sh")
-            .args(&["-c", "which spicetify 2>/dev/null"])
-            .output()
-    };
+      Command::new("cmd")
+          .creation_flags(0x08000000) // Add this line
+          .args(&["/c", "where spicetify 2>NUL"])
+          .output()
+  } else {
+      Command::new("sh")
+          .args(&["-c", "which spicetify 2>/dev/null"])
+          .output()
+  };
 
     match path_check {
         Ok(output) => {
