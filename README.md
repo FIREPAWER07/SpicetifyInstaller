@@ -18,9 +18,9 @@ An **unofficial** Spicetify installer built with [Tauri](https://tauri.app/) for
 Grab the latest release from the **[Releases](https://github.com/YOUR-USERNAME/YOUR-REPO/releases)** page.
 
 ### ▶ Run the Installer
-1. **Windows**: Run the `.exe` file.  
-<!-- 2. **macOS**: Open the `.dmg` and move the app to your Applications folder.  
-3. **Linux**: Extract and run the `.AppImage` or use the `.deb/.rpm` package. -->
+**Windows**: Run the `.exe` file.  
+<!--**macOS**: Open the `.dmg` and move the app to your Applications folder.  
+**Linux**: Extract and run the `.AppImage` or use the `.deb/.rpm` package. -->
 ---
 
 ## 🔮 Future Planned Updates!
