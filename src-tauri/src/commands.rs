@@ -9,7 +9,6 @@ use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
-// Make sure the struct field names match exactly what the TypeScript interface expects
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VersionInfo {
     #[serde(rename = "installerVersion")]
@@ -22,32 +21,26 @@ pub struct VersionInfo {
     pub has_spicetify_update: bool,
 }
 
-// Global state to track if we're currently checking for updates
 static CHECKING_UPDATES: Mutex<bool> = Mutex::new(false);
 
 #[tauri::command]
 pub async fn execute_powershell_command(command: String, app_handle: AppHandle) -> Result<String, String> {
     println!("Executing PowerShell command: {}", command);
 
-    // Special handling for Spicetify installation
     if command.contains("spicetify-cli/master/install.ps1") {
         return install_spicetify_direct(app_handle).await;
     }
     
-    // For other commands, use standard execution with progress tracking
     let output = execute_with_progress(command, app_handle).await?;
     
     Ok(output)
 }
 
 async fn execute_with_progress(command: String, app_handle: AppHandle) -> Result<String, String> {
-    // Create a thread to emit progress updates
     let app_handle_clone = app_handle.clone();
     
-    // Start with 0% progress
     app_handle.emit("progress_update", 0).unwrap();
     
-    // Execute the command
     let output = Command::new("powershell")
     .args(&[
         "-NoProfile",
@@ -57,7 +50,7 @@ async fn execute_with_progress(command: String, app_handle: AppHandle) -> Result
         "-Command",
         &command,
     ])
-    .creation_flags(0x08000000) // CREATE_NO_WINDOW flag
+    .creation_flags(0x08000000) 
     .output()
     .map_err(|e| format!("Failed to execute command: {}", e))?;
 
@@ -69,25 +62,19 @@ async fn execute_with_progress(command: String, app_handle: AppHandle) -> Result
         println!("Command error: {}", stderr);
     }
 
-    // Simulate progress updates based on command output
     let progress_thread = thread::spawn(move || {
         let total_steps = 10;
         for step in 1..=total_steps {
-            // Calculate progress percentage
             let progress = (step as f32 / total_steps as f32) * 100.0;
             
-            // Emit progress update event
             app_handle_clone.emit("progress_update", progress as u32).unwrap();
             
-            // Sleep to simulate work being done
             thread::sleep(Duration::from_millis(300));
         }
     });
 
-    // Wait for progress thread to complete
     let _ = progress_thread.join();
     
-    // Set final progress to 100%
     app_handle.emit("progress_update", 100).unwrap();
 
     if output.status.success() {
@@ -101,16 +88,9 @@ async fn execute_with_progress(command: String, app_handle: AppHandle) -> Result
 }
 
 async fn install_spicetify_direct(app_handle: AppHandle) -> Result<String, String> {
-    // Create a custom PowerShell script that directly installs Spicetify without prompts
     let temp_dir = env::temp_dir();
     let install_script_path = temp_dir.join("spicetify_direct_install.ps1");
 
-    // This script will:
-    // 1. Determine the installation directory
-    // 2. Create the directory if it doesn't exist
-    // 3. Download the latest release from GitHub
-    // 4. Extract it to the installation directory
-    // 5. Add the directory to PATH if it's not already there
     let install_script = r#"
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -306,36 +286,20 @@ Invoke-WebRequest @Parameters | Invoke-Expression
     fs::write(&install_script_path, install_script)
         .map_err(|e| format!("Failed to write installation script: {}", e))?;
 
-    // Start with 0% progress
     app_handle.emit("progress_update", 0).unwrap();
 
-    // Create a thread to emit progress updates during installation
     let app_handle_clone = app_handle.clone();
     let progress_thread = thread::spawn(move || {
-        // Installation typically has these phases:
-        // 1. Checking PowerShell version (10%)
-        // 2. Checking admin status (15%)
-        // 3. Moving old folder if exists (20%)
-        // 4. Fetching latest version (30%)
-        // 5. Downloading (50%)
-        // 6. Extracting (70%)
-        // 7. Adding to PATH (80%)
-        // 8. Installing marketplace (90%)
-        // 9. Cleanup (95%)
-        // 10. Complete (100%)
         
         let progress_steps = vec![10, 15, 20, 30, 50, 70, 80, 90, 95];
         
         for progress in progress_steps {
-            // Sleep to simulate the time each step takes
             thread::sleep(Duration::from_millis(800));
             
-            // Emit progress update
             app_handle_clone.emit("progress_update", progress).unwrap();
         }
     });
 
-    // Execute the installation script
     let output = Command::new("powershell")
     .args(&[
         "-ExecutionPolicy",
@@ -343,20 +307,17 @@ Invoke-WebRequest @Parameters | Invoke-Expression
         "-File",
         &install_script_path.to_string_lossy(),
     ])
-    .creation_flags(0x08000000) // CREATE_NO_WINDOW flag
+    .creation_flags(0x08000000) 
     .output()
     .map_err(|e| format!("Failed to execute installation script: {}", e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
-    // Clean up
     let _ = fs::remove_file(install_script_path);
 
-    // Wait for progress thread to complete
     let _ = progress_thread.join();
     
-    // Set final progress to 100%
     app_handle.emit("progress_update", 100).unwrap();
 
     if output.status.success() {
@@ -371,22 +332,17 @@ Invoke-WebRequest @Parameters | Invoke-Expression
 
 #[tauri::command]
 pub async fn check_versions() -> Result<VersionInfo, String> {
-    // Set checking updates flag
     let mut checking = CHECKING_UPDATES.lock().unwrap();
     if *checking {
         return Err("Already checking for updates".to_string());
     }
     *checking = true;
     
-    // Hardcode a version number for testing instead of relying on CARGO_PKG_VERSION
-    // In a real app, you would use a more reliable method to get the version
     let installer_version = "1.0.0".to_string();
 
-    // DIRECT APPROACH: Use cmd to check for spicetify version
-    // This is the most reliable method on Windows
     println!("Checking Spicetify version using direct cmd approach...");
     let cmd_output = Command::new("cmd")
-    .creation_flags(0x08000000) // Add this line
+    .creation_flags(0x08000000)
     .args(&["/c", "spicetify -v"])
     .output();
 
@@ -416,11 +372,10 @@ pub async fn check_versions() -> Result<VersionInfo, String> {
         }
     };
 
-    // If the direct approach failed, try a fallback using PowerShell
     let spicetify_version = if spicetify_version.is_none() {
         println!("Trying fallback PowerShell approach...");
         let ps_output = Command::new("powershell")
-        .creation_flags(0x08000000) // Add this line
+        .creation_flags(0x08000000)
         .args(&[
             "-NoProfile",
             "-NonInteractive", 
@@ -459,17 +414,12 @@ pub async fn check_versions() -> Result<VersionInfo, String> {
         spicetify_version
     };
 
-    // Check for latest version from GitHub
     let has_spicetify_update = if let Some(current_version) = &spicetify_version {
-        // In a real app, you would fetch the latest version from GitHub
-        // and compare it with the current version
-        // For now, we'll just check if the version is not the latest (2.x.x)
         !current_version.starts_with("2.")
     } else {
         false
     };
 
-    // For app updates, you would check against your release server
     let has_installer_update = false;
 
     println!(
@@ -477,7 +427,6 @@ pub async fn check_versions() -> Result<VersionInfo, String> {
         installer_version, spicetify_version, has_spicetify_update
     );
 
-    // Reset checking updates flag
     *checking = false;
 
     Ok(VersionInfo {
@@ -490,7 +439,6 @@ pub async fn check_versions() -> Result<VersionInfo, String> {
 
 #[tauri::command]
 pub async fn open_faq_url() -> Result<(), String> {
-    // Use the system's default browser to open the URL
     #[cfg(target_os = "windows")]
     {
         Command::new("cmd")
@@ -520,7 +468,6 @@ pub async fn open_faq_url() -> Result<(), String> {
 
 #[tauri::command]
 pub async fn open_download_url() -> Result<(), String> {
-    // Open the download page for the app
     let download_url = "https://github.com/yourusername/spicetify-installer/releases/latest";
 
     #[cfg(target_os = "windows")]
@@ -552,7 +499,6 @@ pub async fn open_download_url() -> Result<(), String> {
 
 #[tauri::command]
 pub async fn check_spicetify_location() -> Result<String, String> {
-    // This command helps diagnose where Spicetify might be installed
     let locations = vec![
         "%LOCALAPPDATA%\\spicetify",
         "%USERPROFILE%\\spicetify-cli",
@@ -565,7 +511,7 @@ pub async fn check_spicetify_location() -> Result<String, String> {
     for location in locations {
       let expanded_location = if cfg!(target_os = "windows") {
         Command::new("cmd")
-            .creation_flags(0x08000000) // Add this line
+            .creation_flags(0x08000000) 
             .args(&["/c", &format!("echo {}", location)])
             .output()
                 .ok()
@@ -585,7 +531,7 @@ pub async fn check_spicetify_location() -> Result<String, String> {
 
         let exists = if cfg!(target_os = "windows") {
           Command::new("cmd")
-              .creation_flags(0x08000000) // Add this line
+              .creation_flags(0x08000000)
               .args(&["/c", &format!("if exist \"{}\" echo 1", expanded_location)])
               .output()
                 .ok()
@@ -608,11 +554,10 @@ pub async fn check_spicetify_location() -> Result<String, String> {
         }
     }
 
-    // Check PATH for spicetify
     result.push_str("\nChecking PATH for spicetify:\n");
     let path_check = if cfg!(target_os = "windows") {
       Command::new("cmd")
-          .creation_flags(0x08000000) // Add this line
+          .creation_flags(0x08000000)
           .args(&["/c", "where spicetify 2>NUL"])
           .output()
   } else {

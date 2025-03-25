@@ -40,8 +40,16 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  background: radial-gradient(circle at top right, rgba(255, 119, 0, 0.1), transparent 70%),
-    radial-gradient(circle at bottom left, rgba(255, 150, 50, 0.1), transparent 70%);
+  background: radial-gradient(
+      circle at top right,
+      rgba(255, 119, 0, 0.1),
+      transparent 70%
+    ),
+    radial-gradient(
+      circle at bottom left,
+      rgba(255, 150, 50, 0.1),
+      transparent 70%
+    );
   z-index: -1;
 }
 
@@ -282,7 +290,11 @@ body {
 .button {
   width: 100%;
   padding: 16px 20px;
-  background: linear-gradient(to right, rgba(30, 30, 30, 0.8), rgba(40, 40, 40, 0.8));
+  background: linear-gradient(
+    to right,
+    rgba(30, 30, 30, 0.8),
+    rgba(40, 40, 40, 0.8)
+  );
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   color: var(--text);
@@ -298,7 +310,11 @@ body {
 }
 
 .button:hover {
-  background: linear-gradient(to right, rgba(40, 40, 40, 0.8), rgba(50, 50, 50, 0.8));
+  background: linear-gradient(
+    to right,
+    rgba(40, 40, 40, 0.8),
+    rgba(50, 50, 50, 0.8)
+  );
   border-color: rgba(255, 119, 0, 0.3);
 }
 
@@ -473,7 +489,12 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.2),
+    transparent
+  );
   animation: shimmer 1.5s infinite;
 }
 
@@ -681,7 +702,6 @@ body {
   opacity: 0.7;
 }
 
-/* Modal styles */
 .modal {
   position: fixed;
   top: 0;

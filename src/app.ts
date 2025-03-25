@@ -52,12 +52,10 @@ class SpicetifyInstaller {
   }
 
   private initEventListeners(): void {
-    // Toggle dropdown menu
     this.dropdownButton.addEventListener("click", () => {
       this.toggleDropdown();
     });
 
-    // Close dropdown when clicking outside
     document.addEventListener("click", (event) => {
       if (
         !this.dropdownButton.contains(event.target as Node) &&
@@ -67,7 +65,6 @@ class SpicetifyInstaller {
       }
     });
 
-    // Handle option selection
     const dropdownItems = document.querySelectorAll(".dropdown-item");
     dropdownItems.forEach((item) => {
       item.addEventListener("click", () => {
@@ -77,7 +74,6 @@ class SpicetifyInstaller {
       });
     });
 
-    // Execute command button
     this.executeButton.addEventListener("click", () => {
       this.executeCommand();
     });
@@ -116,12 +112,9 @@ class SpicetifyInstaller {
   private executeCommand(): void {
     if (!this.selectedCommand) return;
 
-    // In a real application, you would execute the command here
-    // For this demo, we'll simulate command execution
     this.outputElement.classList.add("active");
     this.outputElement.textContent = `Executing: ${this.selectedCommand}\n`;
 
-    // Simulate command output
     const commandName = this.selectedCommand.split(" ")[1];
     const command = this.commands.find((cmd) =>
       cmd.command.includes(commandName)
@@ -137,7 +130,6 @@ class SpicetifyInstaller {
   }
 }
 
-// Initialize the application when the DOM is fully loaded
 document.addEventListener("DOMContentLoaded", () => {
   new SpicetifyInstaller();
 });

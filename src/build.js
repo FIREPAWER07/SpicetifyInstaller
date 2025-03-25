@@ -1,4 +1,3 @@
-// Simple build script to compile TypeScript to JavaScript
 const { exec } = require("child_process");
 
 console.log("Compiling TypeScript...");

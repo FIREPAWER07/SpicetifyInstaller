@@ -1,10 +1,7 @@
-// Import the commands module
 mod commands;
 
-// Re-export the commands for use in main.rs
 pub use commands::*;
 
-// Main run function
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
