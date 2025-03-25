@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="./src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      href="https://fonts.googleapis.com/icon?family=Material+Icons"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <title>Spicetify Installer</title>
+    <script type="module" src="./src/main.ts" defer></script>
+  </head>
+  <body>
+    <div class="background-gradient"></div>
+    <div class="content-wrapper">
+      <header class="header">
+        <div class="logo-container">
+          <img
+            src="./src/assets/img/logo-spicetify.png"
+            alt="Spicetify Logo"
+            class="logo"
+          />
+          <div class="logo-glow"></div>
+        </div>
+        <h1 class="title">Spicetify Installer</h1>
+        <h3 class="sub-title">
+          Installer for a powerful CLI tool to customize the Spotify client
+        </h3>
+        <div class="version-container">
+          <span id="app-version">App v1.0.0</span>
+          <span id="spicetify-version">Checking Spicetify version...</span>
+          <span id="update-notification" class="hidden"
+            >Updates available!</span
+          >
+        </div>
+      </header>
+
+      <main class="main">
+        <div class="card">
+          <div class="dropdown-container">
+            <button id="dropdown-button" class="button">
+              <span id="selected-option">SELECT ACTION</span>
+              <span id="dropdown-icon" class="material-icons">expand_more</span>
+            </button>
+            <div id="dropdown-menu" class="dropdown-menu hidden">
+              <div
+                class="dropdown-item"
+                data-command="iwr -useb https://raw.githubusercontent.com/spicetify/spicetify-cli/master/install.ps1 | iex"
+              >
+                <span class="material-icons item-icon">download</span>
+                <span class="item-text">INSTALL</span>
+                <span class="item-description"
+                  >Install or update Spicetify CLI on your system</span
+                >
+              </div>
+              <div class="dropdown-item" data-command="spicetify backup apply">
+                <span class="material-icons item-icon">build</span>
+                <span class="item-text">REPAIR</span>
+                <span class="item-description"
+                  >Restore from backup and apply Spicetify</span
+                >
+              </div>
+              <div class="dropdown-item" data-command="spicetify backup">
+                <span class="material-icons item-icon">save</span>
+                <span class="item-text">BACKUP</span>
+                <span class="item-description"
+                  >Create a backup of your Spotify installation</span
+                >
+              </div>
+              <div class="dropdown-item" data-command="spicetify restore">
+                <span class="material-icons item-icon">delete</span>
+                <span class="item-text">UNINSTALL</span>
+                <span class="item-description"
+                  >Restore Spotify to its original state</span
+                >
+              </div>
+            </div>
+          </div>
+
+          <div class="command-container">
+            <div class="command-label">Command to execute:</div>
+            <div id="command-display" class="command-display">
+              Select an option to see the command
+            </div>
+            <button id="execute-button" class="execute-btn" disabled>
+              <span class="material-icons">terminal</span>
+              <span>Execute</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="progress-container hidden" id="progress-container">
+          <div class="progress-label">Operation in progress...</div>
+          <div class="progress-bar-container">
+            <div class="progress-bar" id="progress-bar"></div>
+          </div>
+          <div class="progress-percentage" id="progress-percentage">0%</div>
+        </div>
+
+        <div id="output-card" class="card output-card hidden">
+          <div class="output-header">
+            <span class="material-icons">code</span>
+            <span>Console Output</span>
+            <button id="clear-output" class="clear-output-btn">
+              <span class="material-icons">clear</span>
+            </button>
+          </div>
+          <div id="output" class="output"></div>
+        </div>
+
+        <div class="info-card">
+          <div class="info-header">
+            <span class="material-icons">info</span>
+            <span>About Spicetify</span>
+          </div>
+          <div class="info-content">
+            <p>
+              Spicetify is a command-line tool to customize the official Spotify
+              client. It offers:
+            </p>
+            <ul>
+              <li>Custom CSS injection</li>
+              <li>Custom JS injection</li>
+              <li>Custom app injection</li>
+              <li>Theme and extension management</li>
+            </ul>
+            <div class="links-container">
+              <a
+                href="https://spicetify.app/docs/getting-started"
+                target="_blank"
+                class="info-link"
+              >
+                <span>Getting Started</span>
+                <span class="material-icons">open_in_new</span>
+              </a>
+              <a
+                href="https://github.com/spicetify/cli"
+                target="_blank"
+                class="info-link"
+              >
+                <span>GitHub Repository</span>
+                <span class="material-icons">open_in_new</span>
+              </a>
+              <a
+                href="https://spicetify.app/docs/getting-started/#basic-usage"
+                target="_blank"
+                class="info-link"
+              >
+                <span>Basic Usage</span>
+                <span class="material-icons">open_in_new</span>
+              </a>
+              <button id="open-faq" class="faq-button">
+                <span>Open FAQ</span>
+                <span class="material-icons">help</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="disclaimer-card">
+          <div class="disclaimer-header">
+            <span class="material-icons">warning</span>
+            <span>Disclaimer</span>
+          </div>
+          <div class="disclaimer-content">
+            <p>
+              This installer is not affiliated with the Spicetify creators and
+              is developed out of personal frustration. All bug reports should
+              be directed to the
+              <a
+                href="https://github.com/yourusername/spicetify-installer"
+                target="_blank"
+                >installer's GitHub repository</a
+              >, not the official Spicetify GitHub.
+            </p>
+          </div>
+        </div>
+      </main>
+
+      <footer class="footer">
+        <p>
+          This installer uses PowerShell commands from the
+          <a href="https://spicetify.app/docs/getting-started" target="_blank"
+            >official Spicetify documentation</a
+          >.
+        </p>
+        <p class="version" id="footer-version">v1.0.0</p>
+      </footer>
+    </div>
+
+    <!-- FAQ Modal -->
+    <div id="faq-modal" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Spicetify FAQ</h2>
+          <button id="close-faq" class="close-button">
+            <span class="material-icons">close</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <iframe
+            src="https://spicetify.app/docs/faq/"
+            width="100%"
+            height="500px"
+          ></iframe>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
