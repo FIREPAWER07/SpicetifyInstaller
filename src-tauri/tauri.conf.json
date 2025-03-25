@@ -27,10 +27,6 @@
     }
   },
   "bundle": {
-    "windows": {
-      "certificateThumbprint": "3EE1445D6C48D723558B33C8A924340B5F8D42D8",
-      "timestampUrl": "http://timestamp.digicert.com"
-    },
     "active": true,
     "targets": "all",
     "icon": [
