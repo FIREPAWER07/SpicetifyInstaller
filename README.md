@@ -19,9 +19,8 @@ Grab the latest release from the **[Releases](https://github.com/YOUR-USERNAME/Y
 
 ### ▶ Run the Installer
 1. **Windows**: Run the `.exe` file.  
-<!--> 2. **macOS**: Open the `.dmg` and move the app to your Applications folder.  
-3. **Linux**: Extract and run the `.AppImage` or use the `.deb/.rpm` package.<-->
-
+<!-- 2. **macOS**: Open the `.dmg` and move the app to your Applications folder.  
+3. **Linux**: Extract and run the `.AppImage` or use the `.deb/.rpm` package. -->
 ---
 
 ## 🔮 Future Planned Updates!
