@@ -331,20 +331,61 @@ body {
   background: var(--card-bg);
   border-radius: 8px;
   margin-top: 10px;
-  overflow: hidden;
-  z-index: 10;
+  overflow: visible;
+  z-index: 9999;
   box-shadow: 0 10px 30px var(--shadow);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.1);
   transform-origin: top center;
-  transition: transform 0.3s ease, opacity 0.3s ease;
-  transform: scaleY(0);
+  transition: all 0.3s ease;
   opacity: 0;
+  pointer-events: none;
+  transform: translateY(-10px);
+  display: block;
 }
 
 .dropdown-menu.visible {
-  transform: scaleY(1);
   opacity: 1;
+  pointer-events: all;
+  transform: translateY(0);
+  z-index: 1000;
+}
+
+.dropdown-menu-portal .dropdown-item {
+  padding: 16px 20px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  transition: background-color 0.2s ease;
+}
+
+.dropdown-menu-portal .dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.dropdown-menu-portal .dropdown-item:hover {
+  background-color: var(--card-bg-hover);
+}
+.dropdown-menu-portal {
+  position: fixed;
+  background: var(--card-bg);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px var(--shadow);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 999999;
+  overflow-y: auto;
+  max-height: 80vh;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.dropdown-menu-portal.hidden {
+  display: none;
+  opacity: 0;
+  transform: translateY(-10px);
 }
 
 .dropdown-item {
@@ -354,6 +395,7 @@ body {
   display: flex;
   flex-direction: column;
   transition: background-color 0.2s ease;
+  z-index: 9999;
 }
 
 .dropdown-item:last-child {
@@ -712,7 +754,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 100;
+  z-index: 999999 !important;
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.3s ease, visibility 0.3s ease;
@@ -734,6 +776,7 @@ body {
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
   border: 1px solid rgba(255, 255, 255, 0.1);
   overflow: hidden;
+  z-index: 1000000 !important;
 }
 
 .modal-header {
@@ -860,9 +903,11 @@ body {
   }
 
   .card,
+  .output-card,
   .info-card,
   .disclaimer-card {
-    padding: 20px;
+    position: relative;
+    z-index: 1;
   }
 
   .logo {

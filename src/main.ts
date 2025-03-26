@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { DropdownHandler } from "./dropdown-handler";
 
 interface SpicetifyCommand {
   name: string;
@@ -12,13 +13,11 @@ interface VersionInfo {
   spicetifyVersion: string | null;
   hasInstallerUpdate: boolean;
   hasSpicetifyUpdate: boolean;
+  latestInstallerVersion: string | null;
+  latestInstallerUrl: string | null;
 }
 
 class SpicetifyInstallerApp {
-  private dropdownButton: HTMLElement;
-  private dropdownMenu: HTMLElement;
-  private dropdownIcon: HTMLElement;
-  private selectedOptionText: HTMLElement;
   private commandDisplay: HTMLElement;
   private executeButton: HTMLButtonElement;
   private outputElement: HTMLElement;
@@ -34,6 +33,9 @@ class SpicetifyInstallerApp {
   private spicetifyVersionElement: HTMLElement;
   private updateNotificationElement: HTMLElement;
   private footerVersionElement: HTMLElement;
+  private updateModal: HTMLElement | null = null;
+
+  private dropdownHandler: DropdownHandler;
 
   private selectedCommand: string | null = null;
   private isExecuting = false;
@@ -67,16 +69,18 @@ class SpicetifyInstallerApp {
 
   constructor() {
     this.initElements();
-    this.initEventListeners();
 
+    // Initialize the dropdown handler
+    this.dropdownHandler = new DropdownHandler((optionName, command) => {
+      this.selectOption(optionName, command);
+    });
+
+    this.initEventListeners();
+    this.createUpdateModal();
     this.runInitialDiagnostic();
   }
 
   private initElements(): void {
-    this.dropdownButton = document.getElementById("dropdown-button")!;
-    this.dropdownMenu = document.getElementById("dropdown-menu")!;
-    this.dropdownIcon = document.getElementById("dropdown-icon")!;
-    this.selectedOptionText = document.getElementById("selected-option")!;
     this.commandDisplay = document.getElementById("command-display")!;
     this.executeButton = document.getElementById(
       "execute-button"
@@ -103,29 +107,202 @@ class SpicetifyInstallerApp {
     this.footerVersionElement.textContent = "Loading...";
   }
 
-  private initEventListeners(): void {
-    this.dropdownButton.addEventListener("click", () => {
-      this.toggleDropdown();
-    });
+  private createUpdateModal(): void {
+    // Create modal if it doesn't exist
+    if (!document.getElementById("update-modal")) {
+      const modal = document.createElement("div");
+      modal.id = "update-modal";
+      modal.className = "modal hidden";
 
-    document.addEventListener("click", (event) => {
-      if (
-        !this.dropdownButton.contains(event.target as Node) &&
-        !this.dropdownMenu.contains(event.target as Node)
-      ) {
-        this.closeDropdown();
-      }
-    });
+      modal.innerHTML = `
+        <div class="modal-content update-modal-content">
+          <div class="modal-header">
+            <h2 id="update-modal-title">Update Available</h2>
+            <button id="close-update-modal" class="close-button">
+              <span class="material-icons">close</span>
+            </button>
+          </div>
+          <div class="modal-body">
+            <p id="update-modal-message">An update is available.</p>
+            <div class="update-actions">
+              <button id="update-download-btn" class="update-btn">
+                <span class="material-icons">download</span>
+                Download Update
+              </button>
+              <button id="update-cancel-btn" class="cancel-btn">
+                <span class="material-icons">close</span>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
 
-    const dropdownItems = document.querySelectorAll(".dropdown-item");
-    dropdownItems.forEach((item) => {
-      item.addEventListener("click", () => {
-        const command = (item as HTMLElement).dataset.command || "";
-        const optionName = item.querySelector(".item-text")?.textContent || "";
-        this.selectOption(optionName, command);
+      document.body.appendChild(modal);
+
+      // Add event listeners
+      document
+        .getElementById("close-update-modal")!
+        .addEventListener("click", () => {
+          this.closeUpdateModal();
+        });
+
+      document
+        .getElementById("update-cancel-btn")!
+        .addEventListener("click", () => {
+          this.closeUpdateModal();
+        });
+
+      document
+        .getElementById("update-download-btn")!
+        .addEventListener("click", () => {
+          this.downloadUpdate();
+        });
+
+      // Close when clicking outside
+      modal.addEventListener("click", (event) => {
+        if (event.target === modal) {
+          this.closeUpdateModal();
+        }
       });
-    });
 
+      // Add styles if not already in CSS
+      if (!document.getElementById("update-modal-styles")) {
+        const style = document.createElement("style");
+        style.id = "update-modal-styles";
+        style.textContent = `
+          .update-modal-content {
+            max-width: 500px;
+          }
+          
+          .update-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            justify-content: flex-end;
+          }
+          
+          .update-btn {
+            padding: 10px 16px;
+            background: linear-gradient(to right, var(--primary), var(--primary-dark));
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+          }
+          
+          .update-btn:hover {
+            background: linear-gradient(to right, var(--primary-hover), var(--primary));
+            transform: translateY(-2px);
+          }
+          
+          .cancel-btn {
+            padding: 10px 16px;
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+          }
+          
+          .cancel-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+          }
+        `;
+        document.head.appendChild(style);
+      }
+
+      this.updateModal = modal;
+    } else {
+      this.updateModal = document.getElementById("update-modal");
+    }
+  }
+
+  private showUpdateModal(
+    type: "installer" | "spicetify",
+    version: string
+  ): void {
+    if (!this.updateModal) {
+      this.createUpdateModal();
+    }
+
+    const title = document.getElementById("update-modal-title")!;
+    const message = document.getElementById("update-modal-message")!;
+
+    if (type === "installer") {
+      title.textContent = "Installer Update Available";
+      message.textContent = `A new version of the Spicetify Installer is available (v${version}). Would you like to download and install it now?`;
+    } else {
+      title.textContent = "Spicetify Update Available";
+      message.textContent = `A new version of Spicetify is available. Would you like to update now?`;
+    }
+
+    this.updateModal!.classList.remove("hidden");
+    setTimeout(() => {
+      this.updateModal!.classList.add("visible");
+    }, 10);
+  }
+
+  private closeUpdateModal(): void {
+    if (this.updateModal) {
+      this.updateModal.classList.remove("visible");
+      setTimeout(() => {
+        this.updateModal!.classList.add("hidden");
+      }, 300);
+    }
+  }
+
+  private async downloadUpdate(): Promise<void> {
+    this.closeUpdateModal();
+
+    try {
+      const versionInfo = await invoke<VersionInfo>("check_versions");
+
+      if (versionInfo.hasInstallerUpdate) {
+        this.outputCard.classList.remove("hidden");
+        setTimeout(() => {
+          this.outputCard.classList.add("visible");
+        }, 10);
+
+        this.progressContainer.classList.remove("hidden");
+        this.updateProgressBar(0);
+
+        this.appendOutput("Starting automatic update download...\n");
+
+        try {
+          await invoke("download_update");
+          this.appendOutput(
+            "Update download started. The application will restart automatically.\n"
+          );
+          this.updateProgressBar(100);
+        } catch (error) {
+          this.appendOutput(
+            `Failed to download update automatically: ${error}\n`
+          );
+          this.appendOutput("Opening manual download page...\n");
+          await invoke("open_download_url");
+        }
+      } else if (versionInfo.hasSpicetifyUpdate) {
+        this.selectOption("INSTALL", this.commands[0].command);
+        await this.executeCommand();
+      }
+    } catch (error) {
+      console.error("Error handling update:", error);
+      this.appendOutput(`Error handling update: ${error}\n`);
+    }
+  }
+
+  private initEventListeners(): void {
     this.executeButton.addEventListener("click", () => {
       if (!this.isExecuting) {
         this.executeCommand();
@@ -194,40 +371,10 @@ class SpicetifyInstallerApp {
     }
   }
 
-  private toggleDropdown(): void {
-    const isHidden = !this.dropdownMenu.classList.contains("visible");
-
-    if (isHidden) {
-      this.openDropdown();
-    } else {
-      this.closeDropdown();
-    }
-  }
-
-  private openDropdown(): void {
-    this.dropdownMenu.classList.remove("hidden");
-    setTimeout(() => {
-      this.dropdownMenu.classList.add("visible");
-    }, 10);
-    this.dropdownIcon.textContent = "expand_less";
-    this.dropdownIcon.classList.add("rotate");
-  }
-
-  private closeDropdown(): void {
-    this.dropdownMenu.classList.remove("visible");
-    setTimeout(() => {
-      this.dropdownMenu.classList.add("hidden");
-    }, 150);
-    this.dropdownIcon.textContent = "expand_more";
-    this.dropdownIcon.classList.remove("rotate");
-  }
-
   private selectOption(optionName: string, command: string): void {
-    this.selectedOptionText.textContent = optionName;
     this.selectedCommand = command;
     this.commandDisplay.textContent = `> ${command}`;
     this.executeButton.disabled = false;
-    this.closeDropdown();
   }
 
   private async executeCommand(): Promise<void> {
@@ -374,6 +521,10 @@ class SpicetifyInstallerApp {
     this.appVersionElement.classList.add("app-version-badge");
     this.footerVersionElement.textContent = `v${appVersion}`;
 
+    if (versionInfo.latestInstallerVersion) {
+      this.appVersionElement.title = `Latest version: ${versionInfo.latestInstallerVersion}`;
+    }
+
     if (versionInfo.spicetifyVersion) {
       const verMatch = versionInfo.spicetifyVersion.match(/\d+\.\d+\.\d+/);
       const cleanVersion = verMatch ? verMatch[0] : "Unknown version";
@@ -421,12 +572,13 @@ class SpicetifyInstallerApp {
 
       if (versionInfo.hasInstallerUpdate && versionInfo.hasSpicetifyUpdate) {
         this.updateNotificationElement.textContent =
-          "App & Spicetify updates available!";
+          "Installer & Spicetify Updates Available!";
       } else if (versionInfo.hasInstallerUpdate) {
-        this.updateNotificationElement.textContent = "App update available!";
+        this.updateNotificationElement.textContent =
+          "Installer Update Available!";
       } else {
         this.updateNotificationElement.textContent =
-          "Spicetify update available!";
+          "Spicetify Update Available!";
       }
     } else {
       this.updateNotificationElement.classList.add("hidden");
@@ -437,22 +589,17 @@ class SpicetifyInstallerApp {
     try {
       const versionInfo = await invoke<VersionInfo>("check_versions");
 
-      if (versionInfo.hasSpicetifyUpdate) {
-        this.selectOption("INSTALL", this.commands[0].command);
-
-        await this.executeCommand();
-      } else if (versionInfo.hasInstallerUpdate) {
-        if (
-          confirm(
-            "An update for the Spicetify Installer is available. Would you like to download it now?"
-          )
-        ) {
-          await invoke("open_download_url");
-        }
+      if (versionInfo.hasInstallerUpdate) {
+        this.showUpdateModal(
+          "installer",
+          versionInfo.latestInstallerVersion || "1.1.0"
+        );
+      } else if (versionInfo.hasSpicetifyUpdate) {
+        this.showUpdateModal("spicetify", "");
       }
     } catch (error) {
       console.error("Error handling update:", error);
-      alert("Failed to process update. Please try again later.");
+      this.appendOutput(`Error checking for updates: ${error}\n`);
     }
   }
 
@@ -461,15 +608,7 @@ class SpicetifyInstallerApp {
       const versionInfo = await invoke<VersionInfo>("check_versions");
 
       if (versionInfo.hasSpicetifyUpdate) {
-        if (
-          confirm(
-            "A newer version of Spicetify is available. Would you like to update now?"
-          )
-        ) {
-          this.selectOption("INSTALL", this.commands[0].command);
-
-          await this.executeCommand();
-        }
+        this.showUpdateModal("spicetify", "");
       }
     } catch (error) {
       console.error("Error handling Spicetify version click:", error);

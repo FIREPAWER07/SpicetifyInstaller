@@ -9,7 +9,8 @@ pub fn run() {
             commands::check_versions,
             commands::open_faq_url,
             commands::open_download_url,
-            commands::check_spicetify_location
+            commands::check_spicetify_location,
+            commands::download_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
