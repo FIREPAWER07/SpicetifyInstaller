@@ -1,4 +1,4 @@
-![Spicetify Installer Banner](https://i.imgur.com/r36lPdN.png)
+![Spicetify Installer Banner](https://i.imgur.com/aVn70EB.png)
 
 # 🎵 Spicetify Installer (By FIREPAWER07) 🎵
 
