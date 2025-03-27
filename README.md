@@ -15,9 +15,9 @@ An **unofficial** Spicetify installer built with [Tauri](https://tauri.app/) for
 ---
 
 ## Table of Contents
-
 - [Features](#-features)
 - [Installation](#-installation)
+- [Known Issues](#-known-issues)
 - [Future Planned Updates](#-future-planned-updates)
 - [Screenshots](#-screenshots)
 - [Contributing](#-contributing)
@@ -29,7 +29,6 @@ An **unofficial** Spicetify installer built with [Tauri](https://tauri.app/) for
 ---
 
 ## 🚀 Features
-
 - **One-click** Installation / Repair / Backup / Uninstall of Spicetify and its dependencies
 - **Lightweight & Fast** – Powered by Tauri 🦀
 - **Clean & Modern UI** for an intuitive user experience
@@ -39,18 +38,22 @@ An **unofficial** Spicetify installer built with [Tauri](https://tauri.app/) for
 ## 🛠 Installation
 
 ### 📥 Download
-
 Grab the latest release from the **[Releases](https://github.com/FIREPAWER07/SpicetifyInstaller/releases)** page.
 
 ### ▶ Run the Installer
+- **Windows**: Run the `.exe` file.  
+- *(macOS & Linux support coming soon!)*
 
-- **Windows**: Run the `.exe` file.
-- _(macOS & Linux support coming soon!)_
+---
+
+## ❗ Known Issues
+- **Uninstall, Repair and Backup not working** – **TOP PRIORITY**
+- **Progress bar bugged** – **LOW PRIORITY**
+- **Slow installation** – **MEDIUM PRIORITY**
 
 ---
 
 ## 🔮 Future Planned Updates!
-
 - 🚀 **Linux and macOS support**
 - ⚡ **Faster Downloads**
 - 💡 **Lighter App**
@@ -59,40 +62,33 @@ Grab the latest release from the **[Releases](https://github.com/FIREPAWER07/Spi
 ---
 
 ## 🖼 Screenshots
-
-_Stay tuned – More visuals coming soon!_
+*Stay tuned – More visuals coming soon!*
 
 ---
 
 ## 🤝 Contributing
-
 Contributions are welcome! If you have suggestions, find bugs, or want to improve the project:
-
 - **Submit Issues:** [GitHub Issues](https://github.com/FIREPAWER07/SpicetifyInstaller/issues)
 - **Pull Requests:** Fork the repo and send your improvements.
 
 ---
 
 ## 📜 License
-
 This project is licensed under the **GNU General Public License v3.0**. See the [LICENSE](LICENSE) file for details.
 
 ---
 
 ## 💡 About the Developer
-
 I'm a **beginner programmer** who started with no prior experience. I built this project with the help of amazing friends, a bit of AI assistance, and a lot of documentation. I’m excited to keep learning and refining my skills as I work on new updates!
 
 ---
 
 ## 💖 Support Me
+If you appreciate my work and want to support the development of this project, consider buying me a coffee:
 
-If you appreciate my work and want to support the development of this project, consider buying me a Caffè Macchiato:
-
-[![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/firepawer07)
+[![Support me on Ko-fi](https://raw.githubusercontent.com/marklchaves/will-work-for-ko-fi/master/assets/ko-fi-btn.svg)](https://ko-fi.com/firepawer07)
 
 ---
 
 ## ⚡ Stay Updated
-
 Follow the repo and check the releases page for the latest updates. Thanks for supporting and happy customizing!
