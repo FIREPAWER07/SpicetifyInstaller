@@ -1,11 +1,12 @@
 # 🎵 Spicetify Installer (By FIREPAWER07) 🎵
 
-![Spicetify Installer Banner](https://i.imgur.com/r36lPdN.png)
+![Spicetify Installer Banner](https://i.imgur.com/aVn70EB.png)
 
 [![GitHub release](https://img.shields.io/github/release/FIREPAWER07/SpicetifyInstaller.svg)](https://github.com/FIREPAWER07/SpicetifyInstaller/releases)
 [![GitHub issues](https://img.shields.io/github/issues/FIREPAWER07/SpicetifyInstaller.svg)](https://github.com/FIREPAWER07/SpicetifyInstaller/issues)
 [![License](https://img.shields.io/github/license/FIREPAWER07/SpicetifyInstaller.svg)](LICENSE)
 [![Powered by Tauri](https://img.shields.io/badge/powered%20by-tauri-5f5fff.svg)](https://tauri.app/)
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/D1D31CKA7D)
 
 An **unofficial** Spicetify installer built with [Tauri](https://tauri.app/) for a seamless setup experience. This lightweight app automates the installation and configuration of [Spicetify](https://spicetify.app/), allowing you to customize your Spotify client with ease.
 
