@@ -87,7 +87,7 @@ I'm a **beginner programmer** who started with no prior experience. I built this
 
 ## 💖 Support Me
 
-If you appreciate my work and want to support the development of this project, consider buying me a coffee:
+If you appreciate my work and want to support the development of this project, consider buying me a Caffè Macchiato:
 
 [![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/firepawer07)
 
