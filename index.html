@@ -53,12 +53,15 @@
                 data-command="iwr -useb https://raw.githubusercontent.com/spicetify/spicetify-cli/master/install.ps1 | iex"
               >
                 <span class="material-icons item-icon">download</span>
-                <span class="item-text">INSTALL</span>
+                <span class="item-text">INSTALL / UPDATE</span>
                 <span class="item-description"
                   >Install or update Spicetify CLI on your system</span
                 >
               </div>
-              <div class="dropdown-item" data-command="spicetify backup apply">
+              <div
+                class="dropdown-item"
+                data-command="spicetify restore backup apply"
+              >
                 <span class="material-icons item-icon">build</span>
                 <span class="item-text">REPAIR</span>
                 <span class="item-description"
@@ -72,11 +75,15 @@
                   >Create a backup of your Spotify installation</span
                 >
               </div>
-              <div class="dropdown-item" data-command="spicetify restore">
+              <div
+                class="dropdown-item"
+                data-command='spicetify restore; Remove-Item -Path "$env:APPDATA\spicetify" -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item -Path "$env:LOCALAPPDATA\spicetify" -Recurse -Force -ErrorAction SilentlyContinue'
+              >
                 <span class="material-icons item-icon">delete</span>
                 <span class="item-text">UNINSTALL</span>
                 <span class="item-description"
-                  >Uninstalls Spicetify and Restores Spotify to its original state</span
+                  >Completely removes Spicetify and restores Spotify to its
+                  original state</span
                 >
               </div>
             </div>

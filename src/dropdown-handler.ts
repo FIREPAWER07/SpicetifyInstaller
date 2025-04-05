@@ -78,6 +78,9 @@ export class DropdownHandler {
     this.updateDropdownPosition();
 
     this.dropdownMenu.classList.remove("hidden");
+    setTimeout(() => {
+      this.dropdownMenu.classList.add("visible");
+    }, 10);
 
     this.dropdownIcon.textContent = "expand_less";
     this.dropdownIcon.classList.add("rotate");
@@ -89,7 +92,10 @@ export class DropdownHandler {
   }
 
   private closeDropdown() {
-    this.dropdownMenu.classList.add("hidden");
+    this.dropdownMenu.classList.remove("visible");
+    setTimeout(() => {
+      this.dropdownMenu.classList.add("hidden");
+    }, 300);
 
     this.dropdownIcon.textContent = "expand_more";
     this.dropdownIcon.classList.remove("rotate");

@@ -41,8 +41,16 @@ pub async fn execute_powershell_command(
         return install_spicetify_direct(app_handle).await;
     }
 
-    let output = execute_with_progress(command, app_handle).await?;
+    // Check for specific commands and route them to specialized handlers
+    if command.contains("spicetify restore") && command.contains("Remove-Item") {
+        return execute_uninstall_command(app_handle).await;
+    } else if command == "spicetify restore backup apply" {
+        return execute_repair_command(app_handle).await;
+    } else if command == "spicetify backup" {
+        return execute_backup_command(app_handle).await;
+    }
 
+    let output = execute_with_progress(command, app_handle).await?;
     Ok(output)
 }
 
@@ -51,18 +59,53 @@ async fn execute_with_progress(command: String, app_handle: AppHandle) -> Result
 
     app_handle.emit("progress_update", 0).unwrap();
 
+    // Create a PowerShell script file for better command execution
+    let temp_dir = env::temp_dir();
+    let script_path = temp_dir.join("spicetify_command.ps1");
+
+    let script_content = format!(
+        r#"
+$ErrorActionPreference = 'Stop'
+try {{
+    {}
+    Write-Output "Command executed successfully."
+}} catch {{
+    Write-Output "Error: $_"
+    exit 1
+}}
+"#,
+        command
+    );
+
+    fs::write(&script_path, script_content)
+        .map_err(|e| format!("Failed to write command script: {}", e))?;
+
+    let progress_handle = tokio::spawn(async move {
+        let total_steps = 10;
+        for step in 1..=total_steps {
+            let progress = (step as f32 / total_steps as f32) * 100.0;
+            app_handle_clone
+                .emit("progress_update", progress as u32)
+                .unwrap();
+            tokio::time::sleep(Duration::from_millis(300)).await;
+        }
+    });
+
     let output = Command::new("powershell")
         .args(&[
-            "-NoProfile",
-            "-NonInteractive",
             "-ExecutionPolicy",
             "Bypass",
-            "-Command",
-            &command,
+            "-File",
+            &script_path.to_string_lossy(),
         ])
         .creation_flags(0x08000000)
         .output()
         .map_err(|e| format!("Failed to execute command: {}", e))?;
+
+    let _ = fs::remove_file(script_path);
+    let _ = progress_handle.await;
+
+    app_handle.emit("progress_update", 100).unwrap();
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -71,23 +114,6 @@ async fn execute_with_progress(command: String, app_handle: AppHandle) -> Result
     if !stderr.is_empty() {
         println!("Command error: {}", stderr);
     }
-
-    let progress_handle = tokio::spawn(async move {
-        let total_steps = 10;
-        for step in 1..=total_steps {
-            let progress = (step as f32 / total_steps as f32) * 100.0;
-
-            app_handle_clone
-                .emit("progress_update", progress as u32)
-                .unwrap();
-
-            tokio::time::sleep(Duration::from_millis(300)).await;
-        }
-    });
-
-    let _ = progress_handle.await;
-
-    app_handle.emit("progress_update", 100).unwrap();
 
     if output.status.success() {
         Ok(format!("{}\n{}", stdout, stderr))
@@ -99,13 +125,241 @@ async fn execute_with_progress(command: String, app_handle: AppHandle) -> Result
     }
 }
 
+// Specialized function for uninstall command
+async fn execute_uninstall_command(app_handle: AppHandle) -> Result<String, String> {
+    app_handle.emit("progress_update", 10).unwrap();
+
+    // Create a PowerShell script for uninstallation
+    let temp_dir = env::temp_dir();
+    let script_path = temp_dir.join("spicetify_uninstall.ps1");
+
+    let script_content = r#"
+$ErrorActionPreference = 'Continue'
+Write-Output "Step 1: Restoring Spotify to original state..."
+try {
+    spicetify restore
+    Write-Output "Spotify has been restored to its original state."
+} catch {
+    Write-Output "Warning: $($_.Exception.Message)"
+}
+
+Write-Output "`nStep 2: Removing Spicetify from AppData folder..."
+if (Test-Path "$env:APPDATA\spicetify") {
+    Remove-Item -Path "$env:APPDATA\spicetify" -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Output "Removed Spicetify from AppData folder."
+} else {
+    Write-Output "AppData\spicetify folder not found."
+}
+
+Write-Output "`nStep 3: Removing Spicetify from LocalAppData folder..."
+if (Test-Path "$env:LOCALAPPDATA\spicetify") {
+    Remove-Item -Path "$env:LOCALAPPDATA\spicetify" -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Output "Removed Spicetify from LocalAppData folder."
+} else {
+    Write-Output "LocalAppData\spicetify folder not found."
+}
+
+Write-Output "`nSpicetify has been completely uninstalled from your system."
+"#;
+
+    fs::write(&script_path, script_content)
+        .map_err(|e| format!("Failed to write uninstall script: {}", e))?;
+
+    let app_handle_clone = app_handle.clone();
+    let progress_handle = tokio::spawn(async move {
+        let progress_steps = vec![20, 40, 60, 80, 90];
+        for progress in progress_steps {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            app_handle_clone.emit("progress_update", progress).unwrap();
+        }
+    });
+
+    let output = Command::new("powershell")
+        .args(&[
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            &script_path.to_string_lossy(),
+        ])
+        .creation_flags(0x08000000)
+        .output()
+        .map_err(|e| format!("Failed to execute uninstall script: {}", e))?;
+
+    let _ = fs::remove_file(script_path);
+    let _ = progress_handle.await;
+
+    app_handle.emit("progress_update", 100).unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    println!("Uninstall output: {}", stdout);
+    if !stderr.is_empty() {
+        println!("Uninstall error: {}", stderr);
+    }
+
+    Ok(stdout)
+}
+
+// Specialized function for repair command
+async fn execute_repair_command(app_handle: AppHandle) -> Result<String, String> {
+    app_handle.emit("progress_update", 10).unwrap();
+
+    // Create a PowerShell script for repair
+    let temp_dir = env::temp_dir();
+    let script_path = temp_dir.join("spicetify_repair.ps1");
+
+    let script_content = r#"
+$ErrorActionPreference = 'Stop'
+Write-Output "Step 1: Restoring Spotify to original state..."
+try {
+    spicetify restore
+    Write-Output "Spotify has been restored to its original state."
+} catch {
+    Write-Output "Error: $($_.Exception.Message)"
+    exit 1
+}
+
+Write-Output "`nStep 2: Creating a new backup..."
+try {
+    spicetify backup
+    Write-Output "Backup created successfully."
+} catch {
+    Write-Output "Error: $($_.Exception.Message)"
+    exit 1
+}
+
+Write-Output "`nStep 3: Applying Spicetify customizations..."
+try {
+    spicetify apply
+    Write-Output "Spicetify applied successfully."
+} catch {
+    Write-Output "Error: $($_.Exception.Message)"
+    exit 1
+}
+
+Write-Output "`nRepair process completed successfully!"
+"#;
+
+    fs::write(&script_path, script_content)
+        .map_err(|e| format!("Failed to write repair script: {}", e))?;
+
+    let app_handle_clone = app_handle.clone();
+    let progress_handle = tokio::spawn(async move {
+        let progress_steps = vec![20, 30, 50, 70, 90];
+        for progress in progress_steps {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            app_handle_clone.emit("progress_update", progress).unwrap();
+        }
+    });
+
+    let output = Command::new("powershell")
+        .args(&[
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            &script_path.to_string_lossy(),
+        ])
+        .creation_flags(0x08000000)
+        .output()
+        .map_err(|e| format!("Failed to execute repair script: {}", e))?;
+
+    let _ = fs::remove_file(script_path);
+    let _ = progress_handle.await;
+
+    app_handle.emit("progress_update", 100).unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    println!("Repair output: {}", stdout);
+    if !stderr.is_empty() {
+        println!("Repair error: {}", stderr);
+    }
+
+    if output.status.success() {
+        Ok(stdout)
+    } else {
+        Err(format!("Repair failed: {}", stderr))
+    }
+}
+
+// Specialized function for backup command
+async fn execute_backup_command(app_handle: AppHandle) -> Result<String, String> {
+    app_handle.emit("progress_update", 10).unwrap();
+
+    // Create a PowerShell script for backup
+    let temp_dir = env::temp_dir();
+    let script_path = temp_dir.join("spicetify_backup.ps1");
+
+    let script_content = r#"
+$ErrorActionPreference = 'Stop'
+Write-Output "Creating backup of Spotify installation..."
+try {
+    spicetify backup
+    Write-Output "Backup created successfully."
+} catch {
+    Write-Output "Error: $($_.Exception.Message)"
+    exit 1
+}
+
+Write-Output "`nBackup process completed successfully!"
+"#;
+
+    fs::write(&script_path, script_content)
+        .map_err(|e| format!("Failed to write backup script: {}", e))?;
+
+    let app_handle_clone = app_handle.clone();
+    let progress_handle = tokio::spawn(async move {
+        let progress_steps = vec![30, 50, 70, 90];
+        for progress in progress_steps {
+            tokio::time::sleep(Duration::from_millis(400)).await;
+            app_handle_clone.emit("progress_update", progress).unwrap();
+        }
+    });
+
+    let output = Command::new("powershell")
+        .args(&[
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            &script_path.to_string_lossy(),
+        ])
+        .creation_flags(0x08000000)
+        .output()
+        .map_err(|e| format!("Failed to execute backup script: {}", e))?;
+
+    let _ = fs::remove_file(script_path);
+    let _ = progress_handle.await;
+
+    app_handle.emit("progress_update", 100).unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    println!("Backup output: {}", stdout);
+    if !stderr.is_empty() {
+        println!("Backup error: {}", stderr);
+    }
+
+    if output.status.success() {
+        Ok(stdout)
+    } else {
+        Err(format!("Backup failed: {}", stderr))
+    }
+}
+
+// Replace the install_spicetify_direct function with this improved version
 async fn install_spicetify_direct(app_handle: AppHandle) -> Result<String, String> {
     let temp_dir = env::temp_dir();
     let install_script_path = temp_dir.join("spicetify_direct_install.ps1");
 
+    // Create an improved installation script with better PATH handling and verification
     let install_script = r#"
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+Write-Host "Starting Spicetify installation process..." -ForegroundColor Cyan
 
 #region Variables
 $spicetifyFolderPath = "$env:LOCALAPPDATA\spicetify"
@@ -114,184 +368,272 @@ $spicetifyOldFolderPath = "$HOME\spicetify-cli"
 
 #region Functions
 function Write-Success {
-  [CmdletBinding()]
-  param ()
-  process {
-    Write-Host -Object ' > OK' -ForegroundColor 'Green'
-  }
+  param ($message = "OK")
+  Write-Host " > $message" -ForegroundColor Green
 }
 
 function Write-Unsuccess {
-  [CmdletBinding()]
-  param ()
-  process {
-    Write-Host -Object ' > ERROR' -ForegroundColor 'Red'
-  }
+  param ($message = "ERROR")
+  Write-Host " > $message" -ForegroundColor Red
 }
 
 function Test-Admin {
-  [CmdletBinding()]
-  param ()
-  begin {
-    Write-Host -Object "Checking if the script is not being run as administrator..." -NoNewline
-  }
-  process {
-    $currentUser = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
-    -not $currentUser.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-  }
+  Write-Host "Checking if the script is not being run as administrator..." -NoNewline
+  $currentUser = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+  -not $currentUser.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-function Test-PowerShellVersion {
-  [CmdletBinding()]
-  param ()
-  begin {
-    $PSMinVersion = [version]'5.1'
+function Add-SpicetifyToPath {
+  Write-Host "Making Spicetify available in the PATH (current session and permanently)..." -NoNewline
+  $user = [EnvironmentVariableTarget]::User
+  $path = [Environment]::GetEnvironmentVariable('PATH', $user)
+  
+  # First remove any old paths
+  $path = $path -replace "$([regex]::Escape($spicetifyOldFolderPath))\\*;*", ''
+  
+  # Then add the new path if it's not already there
+  if ($path -notlike "*$spicetifyFolderPath*") {
+    $path = "$path;$spicetifyFolderPath"
+    
+    # Update the path for future sessions
+    [Environment]::SetEnvironmentVariable('PATH', $path, $user)
+    
+    # Also update the path for the current session
+    $env:PATH = $path
+    
+    Write-Success "Path updated successfully"
+  } else {
+    Write-Success "Path already contains Spicetify"
   }
-  process {
-    Write-Host -Object 'Checking if your PowerShell version is compatible...' -NoNewline
-    $PSVersionTable.PSVersion -ge $PSMinVersion
-  }
-}
-
-function Move-OldSpicetifyFolder {
-  [CmdletBinding()]
-  param ()
-  process {
-    if (Test-Path -Path $spicetifyOldFolderPath) {
-      Write-Host -Object 'Moving the old spicetify folder...' -NoNewline
-      Copy-Item -Path "$spicetifyOldFolderPath\*" -Destination $spicetifyFolderPath -Recurse -Force
-      Remove-Item -Path $spicetifyOldFolderPath -Recurse -Force
-      Write-Success
-    }
+  
+  # Verify the path update
+  Write-Host "Verifying PATH update..." -NoNewline
+  $updatedPath = [Environment]::GetEnvironmentVariable('PATH', $user)
+  if ($updatedPath -like "*$spicetifyFolderPath*") {
+    Write-Success "PATH verified"
+  } else {
+    Write-Unsuccess "PATH verification failed"
+    Write-Host "Current PATH: $updatedPath" -ForegroundColor Yellow
+    Write-Host "Expected to contain: $spicetifyFolderPath" -ForegroundColor Yellow
   }
 }
 
 function Get-Spicetify {
-  [CmdletBinding()]
-  param ()
-  begin {
-    if ($env:PROCESSOR_ARCHITECTURE -eq 'AMD64') {
-      $architecture = 'x64'
-    }
-    elseif ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') {
-      $architecture = 'arm64'
-    }
-    else {
-      $architecture = 'x32'
-    }
-    if ($v) {
-      if ($v -match '^\d+\.\d+\.\d+$') {
-        $targetVersion = $v
-      }
-      else {
-        Write-Warning -Message "You have spicefied an invalid spicetify version: $v `nThe version must be in the following format: 1.2.3"
-        exit
-      }
-    }
-    else {
-      Write-Host -Object 'Fetching the latest spicetify version...' -NoNewline
-      $latestRelease = Invoke-RestMethod -Uri 'https://api.github.com/repos/spicetify/cli/releases/latest'
-      $targetVersion = $latestRelease.tag_name -replace 'v', ''
-      Write-Success
-    }
-    $archivePath = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "spicetify.zip")
+  if ($env:PROCESSOR_ARCHITECTURE -eq 'AMD64') {
+    $architecture = 'x64'
   }
-  process {
-    Write-Host -Object "Downloading spicetify v$targetVersion..." -NoNewline
+  elseif ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') {
+    $architecture = 'arm64'
+  }
+  else {
+    $architecture = 'x32'
+  }
+  
+  Write-Host 'Fetching the latest Spicetify version...' -NoNewline
+  try {
+    $latestRelease = Invoke-RestMethod -Uri 'https://api.github.com/repos/spicetify/cli/releases/latest'
+    $targetVersion = $latestRelease.tag_name -replace 'v', ''
+    Write-Success "Found version $targetVersion"
+  }
+  catch {
+    Write-Unsuccess
+    Write-Host "Failed to fetch latest version: $_" -ForegroundColor Red
+    $targetVersion = "2.16.2" # Fallback to a known good version
+    Write-Host "Using fallback version $targetVersion" -ForegroundColor Yellow
+  }
+  
+  $archivePath = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "spicetify.zip")
+  
+  Write-Host "Downloading Spicetify v$targetVersion for $architecture..." -NoNewline
+  try {
     $Parameters = @{
       Uri            = "https://github.com/spicetify/cli/releases/download/v$targetVersion/spicetify-$targetVersion-windows-$architecture.zip"
-      UseBasicParsin = $true
+      UseBasicParsing = $true
       OutFile        = $archivePath
     }
     Invoke-WebRequest @Parameters
     Write-Success
+    return $archivePath
   }
-  end {
-    $archivePath
-  }
-}
-
-function Add-SpicetifyToPath {
-  [CmdletBinding()]
-  param ()
-  begin {
-    Write-Host -Object 'Making spicetify available in the PATH...' -NoNewline
-    $user = [EnvironmentVariableTarget]::User
-    $path = [Environment]::GetEnvironmentVariable('PATH', $user)
-  }
-  process {
-    $path = $path -replace "$([regex]::Escape($spicetifyOldFolderPath))\\*;*", ''
-    if ($path -notlike "*$spicetifyFolderPath*") {
-      $path = "$path;$spicetifyFolderPath"
-    }
-  }
-  end {
-    [Environment]::SetEnvironmentVariable('PATH', $path, $user)
-    $env:PATH = $path
-    Write-Success
+  catch {
+    Write-Unsuccess
+    Write-Host "Download failed: $_" -ForegroundColor Red
+    throw
   }
 }
 
 function Install-Spicetify {
-  [CmdletBinding()]
-  param ()
-  begin {
-    Write-Host -Object 'Installing spicetify...'
+  Write-Host "Installing Spicetify..." -ForegroundColor Cyan
+  
+  # Create the directory if it doesn't exist
+  if (!(Test-Path -Path $spicetifyFolderPath)) {
+    Write-Host "Creating Spicetify directory..." -NoNewline
+    New-Item -Path $spicetifyFolderPath -ItemType Directory -Force | Out-Null
+    Write-Success
   }
-  process {
+  
+  try {
     $archivePath = Get-Spicetify
-    Write-Host -Object 'Extracting spicetify...' -NoNewline
+    
+    Write-Host 'Extracting Spicetify...' -NoNewline
     Expand-Archive -Path $archivePath -DestinationPath $spicetifyFolderPath -Force
     Write-Success
+    
+    # Add to PATH
     Add-SpicetifyToPath
-  }
-  end {
+    
+    # Clean up
     Remove-Item -Path $archivePath -Force -ErrorAction 'SilentlyContinue'
-    Write-Host -Object 'spicetify was successfully installed!' -ForegroundColor 'Green'
+    
+    # Verify installation
+    Write-Host "Verifying Spicetify installation..." -NoNewline
+    if (Test-Path -Path "$spicetifyFolderPath\spicetify.exe") {
+      Write-Success "spicetify.exe found"
+    } else {
+      Write-Unsuccess "spicetify.exe not found"
+      Write-Host "Contents of ${spicetifyFolderPath}:" -ForegroundColor Yellow
+      Get-ChildItem -Path $spicetifyFolderPath | ForEach-Object { Write-Host " - $($_.Name)" }
+      throw "Spicetify executable not found after installation"
+    }
+    
+    Write-Host "Spicetify was successfully installed!" -ForegroundColor Green
+    
+    # Return the installation path for diagnostics
+    return $spicetifyFolderPath
+  }
+  catch {
+    Write-Host "Installation failed: $_" -ForegroundColor Red
+    throw
+  }
+}
+
+function Install-SpicetifyMarketplace {
+  Write-Host "Installing Spicetify Marketplace..." -ForegroundColor Cyan
+  try {
+    $Parameters = @{
+      Uri             = 'https://raw.githubusercontent.com/spicetify/spicetify-marketplace/main/resources/install.ps1'
+      UseBasicParsing = $true
+    }
+    $marketplaceScript = (Invoke-WebRequest @Parameters).Content
+    
+    # Execute the marketplace script
+    $tempScriptPath = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "marketplace-install.ps1")
+    Set-Content -Path $tempScriptPath -Value $marketplaceScript
+    
+    # Run the script
+    & $tempScriptPath
+    
+    # Clean up
+    Remove-Item -Path $tempScriptPath -Force -ErrorAction SilentlyContinue
+    
+    Write-Host "Marketplace installation completed" -ForegroundColor Green
+  }
+  catch {
+    Write-Host "Marketplace installation failed: $_" -ForegroundColor Red
+    Write-Host "You can install the marketplace manually later." -ForegroundColor Yellow
+  }
+}
+
+function Test-SpicetifyCommand {
+  Write-Host "Testing Spicetify command..." -NoNewline
+  try {
+    $testResult = & "$spicetifyFolderPath\spicetify.exe" -v
+    Write-Success "Version: $testResult"
+    
+    # Try refreshing the PATH and testing again if direct execution worked
+    if ($testResult) {
+      Write-Host "Refreshing PowerShell PATH and testing system-wide command..." -NoNewline
+      try {
+        # Update PATH for the current session
+        $env:PATH = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+        $globalTest = spicetify -v
+        Write-Success "Global command test successful: $globalTest"
+      }
+      catch {
+        Write-Unsuccess
+        Write-Host "Global command test failed. You may need to restart your terminal." -ForegroundColor Yellow
+      }
+    }
+    
+    return $true
+  }
+  catch {
+    Write-Unsuccess
+    Write-Host "Failed to run Spicetify: $_" -ForegroundColor Red
+    return $false
   }
 }
 #endregion Functions
 
 #region Main
-#region Checks
-if (-not (Test-PowerShellVersion)) {
-  Write-Unsuccess
-  Write-Warning -Message 'PowerShell 5.1 or higher is required to run this script'
-  Write-Warning -Message "You are running PowerShell $($PSVersionTable.PSVersion)"
-  Write-Host -Object 'PowerShell 5.1 install guide:'
-  Write-Host -Object 'https://learn.microsoft.com/skypeforbusiness/set-up-your-computer-for-windows-powershell/download-and-install-windows-powershell-5-1'
-  Write-Host -Object 'PowerShell 7 install guide:'
-  Write-Host -Object 'https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-windows'
-  exit
+try {
+  # Check prerequisites
+  if (-not (Test-Admin)) {
+    Write-Warning "The script is being run as administrator. This can result in problems with the installation process."
+    Write-Success "Proceeding anyway"
+  } else {
+    Write-Success "Not running as administrator"
+  }
+  
+  # Process old Spicetify folder if it exists
+  if (Test-Path -Path $spicetifyOldFolderPath) {
+    Write-Host "Moving old Spicetify folder..." -NoNewline
+    if (!(Test-Path -Path $spicetifyFolderPath)) {
+      New-Item -Path $spicetifyFolderPath -ItemType Directory -Force | Out-Null
+    }
+    Copy-Item -Path "$spicetifyOldFolderPath\*" -Destination $spicetifyFolderPath -Recurse -Force
+    Remove-Item -Path $spicetifyOldFolderPath -Recurse -Force
+    Write-Success
+  }
+  
+  # Install Spicetify
+  $installPath = Install-Spicetify
+  
+  # Test the Spicetify command
+  $commandWorks = Test-SpicetifyCommand
+  
+  # Install Marketplace
+  if ($commandWorks) {
+    Install-SpicetifyMarketplace
+  }
+  
+  # Summary
+  Write-Host ""
+  Write-Host "== Installation Summary ==" -ForegroundColor Cyan
+  Write-Host "Installation directory: $installPath"
+  if ($commandWorks) {
+    Write-Host "Command test: Successful" -ForegroundColor Green
+  } else {
+    Write-Host "Command test: Failed" -ForegroundColor Red
+    Write-Host "Try running: $installPath\spicetify.exe" -ForegroundColor Yellow
+  }
+  
+  Write-Host ""
+  Write-Host "To get started, run:" -NoNewline
+  Write-Host " spicetify -h " -NoNewline -ForegroundColor Cyan
+  Write-Host "or open a new terminal window if the command is not recognized."
+  
+  # Diagnostic info
+  Write-Host ""
+  Write-Host "== Diagnostic Information ==" -ForegroundColor Cyan
+  Write-Host "PATH variable contains Spicetify directory: $([Environment]::GetEnvironmentVariable('PATH', 'User') -like '*spicetify*')"
+  Write-Host "Spicetify executable exists: $(Test-Path -Path "$spicetifyFolderPath\spicetify.exe")"
+  
+  Write-Host ""
+  Write-Host "Installation completed successfully!" -ForegroundColor Green
 }
-else {
-  Write-Success
+catch {
+  Write-Host ""
+  Write-Host "== Installation Failed ==" -ForegroundColor Red
+  Write-Host "Error: $_" -ForegroundColor Red
+  Write-Host ""
+  Write-Host "== Diagnostics ==" -ForegroundColor Yellow
+  Write-Host "Spicetify directory exists: $(Test-Path -Path $spicetifyFolderPath)"
+  Write-Host "Current user: $([Environment]::UserName)"
+  Write-Host "Check if you have permissions to write to $env:LOCALAPPDATA"
+  
+  throw "Installation failed: $_"
 }
-if (-not (Test-Admin)) {
-  Write-Unsuccess
-  Write-Warning -Message "The script was run as administrator. This can result in problems with the installation process or unexpected behavior. Proceeding with installation..."
-}
-else {
-  Write-Success
-}
-#endregion Checks
-
-#region Spicetify
-Move-OldSpicetifyFolder
-Install-Spicetify
-Write-Host -Object "`nRun" -NoNewline
-Write-Host -Object ' spicetify -h ' -NoNewline -ForegroundColor 'Cyan'
-Write-Host -Object 'to get started'
-#endregion Spicetify
-
-#region Marketplace
-Write-Host -Object 'Installing Spicetify Marketplace...'
-$Parameters = @{
-  Uri             = 'https://raw.githubusercontent.com/spicetify/spicetify-marketplace/main/resources/install.ps1'
-  UseBasicParsing = $true
-}
-Invoke-WebRequest @Parameters | Invoke-Expression
-#endregion Marketplace
 #endregion Main
     "#;
 
@@ -325,7 +667,6 @@ Invoke-WebRequest @Parameters | Invoke-Expression
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
     let _ = fs::remove_file(install_script_path);
-
     let _ = progress_handle.await;
 
     app_handle.emit("progress_update", 100).unwrap();
@@ -336,10 +677,14 @@ Invoke-WebRequest @Parameters | Invoke-Expression
             stdout, stderr
         ))
     } else {
-        Err(format!("Spicetify installation failed: {}", stderr))
+        Err(format!(
+            "Spicetify installation failed: {}\n{}",
+            stderr, stdout
+        ))
     }
 }
 
+// Replace the check_versions function with this improved version that handles missing Spicetify better
 #[tauri::command]
 pub async fn check_versions() -> Result<VersionInfo, String> {
     if CHECKING_UPDATES
@@ -350,41 +695,113 @@ pub async fn check_versions() -> Result<VersionInfo, String> {
     }
 
     let installer_version = "1.0.1".to_string();
+    let mut diagnostic_info = String::new();
 
-    println!("Checking Spicetify version using direct cmd approach...");
-    let cmd_output = Command::new("cmd")
-        .creation_flags(0x08000000)
-        .args(&["/c", "spicetify -v"])
-        .output();
+    // First check if the Spicetify directory exists
+    println!("Checking if Spicetify directory exists...");
+    diagnostic_info.push_str("Checking Spicetify directories:\n");
 
-    let spicetify_version = match cmd_output {
-        Ok(output) => {
-            if output.status.success() {
-                let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                println!("CMD direct check found Spicetify version: {}", version);
-                if !version.is_empty() {
-                    Some(version)
-                } else {
-                    println!("CMD returned empty version string");
-                    None
-                }
-            } else {
-                println!("CMD spicetify check failed with status: {}", output.status);
-                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                if !stderr.is_empty() {
-                    println!("Error output: {}", stderr);
-                }
-                None
-            }
-        }
-        Err(e) => {
-            println!("Failed to execute CMD spicetify check: {}", e);
-            None
+    let localappdata_path = match env::var("LOCALAPPDATA") {
+        Ok(path) => path,
+        Err(_) => {
+            diagnostic_info.push_str("- Failed to get LOCALAPPDATA environment variable\n");
+            String::new()
         }
     };
 
-    let spicetify_version = if spicetify_version.is_none() {
+    let spicetify_path = format!("{}\\spicetify", localappdata_path);
+    let spicetify_exe_path = format!("{}\\spicetify.exe", spicetify_path);
+
+    let dir_exists = std::path::Path::new(&spicetify_path).exists();
+    let exe_exists = std::path::Path::new(&spicetify_exe_path).exists();
+
+    diagnostic_info.push_str(&format!(
+        "- Spicetify directory exists at {}: {}\n",
+        spicetify_path, dir_exists
+    ));
+    diagnostic_info.push_str(&format!(
+        "- Spicetify executable exists at {}: {}\n",
+        spicetify_exe_path, exe_exists
+    ));
+
+    // Try direct execution first if the executable exists
+    let mut spicetify_version = None;
+
+    if exe_exists {
+        println!("Trying direct Spicetify executable check...");
+        diagnostic_info.push_str("\nTrying direct executable check:\n");
+
+        let direct_output = Command::new(&spicetify_exe_path)
+            .creation_flags(0x08000000)
+            .args(&["-v"])
+            .output();
+
+        match direct_output {
+            Ok(output) => {
+                if output.status.success() {
+                    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    diagnostic_info
+                        .push_str(&format!("- Direct executable check result: {}\n", version));
+                    if !version.is_empty() {
+                        spicetify_version = Some(version);
+                    }
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                    diagnostic_info.push_str(&format!(
+                        "- Direct executable check failed with status: {}\n",
+                        output.status
+                    ));
+                    if !stderr.is_empty() {
+                        diagnostic_info.push_str(&format!("- Error: {}\n", stderr));
+                    }
+                }
+            }
+            Err(e) => {
+                diagnostic_info.push_str(&format!("- Direct executable check error: {}\n", e));
+            }
+        }
+    }
+
+    // Try CMD next if we still don't have a version
+    if spicetify_version.is_none() {
+        println!("Checking Spicetify version using CMD...");
+        diagnostic_info.push_str("\nTrying CMD check:\n");
+
+        let cmd_output = Command::new("cmd")
+            .creation_flags(0x08000000)
+            .args(&["/c", "spicetify -v"])
+            .output();
+
+        match cmd_output {
+            Ok(output) => {
+                if output.status.success() {
+                    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    diagnostic_info.push_str(&format!("- CMD check result: {}\n", version));
+                    if !version.is_empty() {
+                        spicetify_version = Some(version);
+                    }
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                    diagnostic_info.push_str(&format!(
+                        "- CMD check failed with status: {}\n",
+                        output.status
+                    ));
+                    if !stderr.is_empty() {
+                        diagnostic_info.push_str(&format!("- Error: {}\n", stderr));
+                    }
+                }
+            }
+            Err(e) => {
+                diagnostic_info.push_str(&format!("- CMD check error: {}\n", e));
+            }
+        }
+    }
+
+    // Try PowerShell as a last resort
+    if spicetify_version.is_none() {
         println!("Trying fallback PowerShell approach...");
+        diagnostic_info.push_str("\nTrying PowerShell check:\n");
+
         let ps_output = Command::new("powershell")
             .creation_flags(0x08000000)
             .args(&[
@@ -401,40 +818,40 @@ pub async fn check_versions() -> Result<VersionInfo, String> {
             Ok(output) => {
                 if output.status.success() {
                     let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    println!("PowerShell fallback found Spicetify version: {}", version);
+                    diagnostic_info.push_str(&format!("- PowerShell check result: {}\n", version));
                     if !version.is_empty() {
-                        Some(version)
-                    } else {
-                        println!("PowerShell returned empty version string");
-                        None
+                        spicetify_version = Some(version);
                     }
                 } else {
-                    println!(
-                        "PowerShell spicetify check failed with status: {}",
+                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                    diagnostic_info.push_str(&format!(
+                        "- PowerShell check failed with status: {}\n",
                         output.status
-                    );
-                    None
+                    ));
+                    if !stderr.is_empty() {
+                        diagnostic_info.push_str(&format!("- Error: {}\n", stderr));
+                    }
                 }
             }
             Err(e) => {
-                println!("Failed to execute PowerShell spicetify check: {}", e);
-                None
+                diagnostic_info.push_str(&format!("- PowerShell check error: {}\n", e));
             }
         }
-    } else {
-        spicetify_version
-    };
+    }
 
+    // Check if we need an update (if version was found)
     let has_spicetify_update = if let Some(current_version) = &spicetify_version {
         !current_version.starts_with("2.")
     } else {
         false
     };
 
+    // Check for installer updates
     let (latest_version, download_url) = match check_github_release().await {
         Ok((v, url)) => (Some(v), Some(url)),
         Err(e) => {
             println!("Error checking GitHub: {}", e);
+            diagnostic_info.push_str(&format!("\nGitHub check error: {}\n", e));
             (None, None)
         }
     };
@@ -449,6 +866,11 @@ pub async fn check_versions() -> Result<VersionInfo, String> {
         "Final version info: installer={}, spicetify={:?}, has_update={}",
         installer_version, spicetify_version, has_spicetify_update
     );
+
+    diagnostic_info.push_str(&format!("\nFinal version info: installer={}, spicetify={:?}, has_update={}, diagnostic_complete=true",
+        installer_version, spicetify_version, has_spicetify_update));
+
+    println!("Diagnostic info:\n{}", diagnostic_info);
 
     CHECKING_UPDATES.store(false, Ordering::SeqCst);
 
@@ -465,20 +887,24 @@ pub async fn check_versions() -> Result<VersionInfo, String> {
 #[tauri::command]
 pub async fn download_update(_app_handle: AppHandle) -> Result<(), String> {
     let version_info = check_versions().await?;
-    
+
     if !version_info.has_installer_update {
         return Err("No updates available".to_string());
     }
-    
-    let download_url = version_info.latest_installer_url
+
+    let download_url = version_info
+        .latest_installer_url
         .ok_or("No download URL available")?;
-    
+
     let temp_dir = env::temp_dir();
-    let filename = download_url.split('/').last().unwrap_or("spicetify-installer-update.exe");
+    let filename = download_url
+        .split('/')
+        .last()
+        .unwrap_or("spicetify-installer-update.exe");
     let _download_path = temp_dir.join(filename);
 
     open_download_url().await?;
-    
+
     Ok(())
 }
 

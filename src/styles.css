@@ -323,6 +323,49 @@ body {
   box-shadow: 0 0 0 2px var(--primary);
 }
 
+.dropdown-menu-portal {
+  position: fixed;
+  background: var(--card-bg);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px var(--shadow);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 999999;
+  overflow-y: auto;
+  max-height: 80vh;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.dropdown-menu-portal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.dropdown-menu-portal.hidden {
+  display: none;
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.dropdown-menu-portal .dropdown-item {
+  padding: 16px 20px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  transition: background-color 0.2s ease;
+}
+
+.dropdown-menu-portal .dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.dropdown-menu-portal .dropdown-item:hover {
+  background-color: var(--card-bg-hover);
+}
+
 .dropdown-menu {
   position: absolute;
   top: 100%;

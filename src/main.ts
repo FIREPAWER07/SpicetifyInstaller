@@ -52,7 +52,7 @@ class SpicetifyInstallerApp {
     },
     {
       name: "REPAIR",
-      command: "spicetify backup apply",
+      command: "spicetify restore backup apply",
       description: "Restores from backup and applies Spicetify",
     },
     {
@@ -62,8 +62,10 @@ class SpicetifyInstallerApp {
     },
     {
       name: "UNINSTALL",
-      command: "spicetify restore",
-      description: "Restores Spotify to its original state",
+      command:
+        'spicetify restore; Remove-Item -Path "$env:APPDATA\\spicetify" -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item -Path "$env:LOCALAPPDATA\\spicetify" -Recurse -Force -ErrorAction SilentlyContinue',
+      description:
+        "Completely removes Spicetify and restores Spotify to its original state",
     },
   ];
 
@@ -165,62 +167,6 @@ class SpicetifyInstallerApp {
           this.closeUpdateModal();
         }
       });
-
-      // Add styles if not already in CSS
-      if (!document.getElementById("update-modal-styles")) {
-        const style = document.createElement("style");
-        style.id = "update-modal-styles";
-        style.textContent = `
-          .update-modal-content {
-            max-width: 500px;
-          }
-          
-          .update-actions {
-            display: flex;
-            gap: 10px;
-            margin-top: 20px;
-            justify-content: flex-end;
-          }
-          
-          .update-btn {
-            padding: 10px 16px;
-            background: linear-gradient(to right, var(--primary), var(--primary-dark));
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            transition: all 0.3s ease;
-          }
-          
-          .update-btn:hover {
-            background: linear-gradient(to right, var(--primary-hover), var(--primary));
-            transform: translateY(-2px);
-          }
-          
-          .cancel-btn {
-            padding: 10px 16px;
-            background: rgba(255, 255, 255, 0.1);
-            color: var(--text);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            transition: all 0.3s ease;
-          }
-          
-          .cancel-btn:hover {
-            background: rgba(255, 255, 255, 0.2);
-          }
-        `;
-        document.head.appendChild(style);
-      }
 
       this.updateModal = modal;
     } else {
@@ -353,10 +299,6 @@ class SpicetifyInstallerApp {
         const output = await invoke<string>("execute_powershell_command", {
           command:
             "try { spicetify -v } catch { Write-Output 'Command failed' }",
-          options: {
-            windowsVerbatimArguments: true,
-            windowsHide: true,
-          },
         });
         this.appendOutput("\nSpicetify version command output:\n" + output);
       } catch (error) {
@@ -402,7 +344,12 @@ class SpicetifyInstallerApp {
     try {
       this.setupProgressListener();
 
-      await this.executeCommandWithTauri(this.selectedCommand);
+      // Fix for repair command - ensure correct order of operations
+      if (this.selectedCommand.includes("restore backup apply")) {
+        await this.executeFixedRepairCommand();
+      } else {
+        await this.executeCommandWithTauri(this.selectedCommand);
+      }
 
       this.completeProgress();
 
@@ -420,6 +367,25 @@ class SpicetifyInstallerApp {
       this.isExecuting = false;
 
       this.removeProgressListener();
+    }
+  }
+
+  // New method to fix the repair command execution
+  private async executeFixedRepairCommand(): Promise<void> {
+    try {
+      // First restore from backup
+      this.appendOutput("Step 1: Restoring from backup...\n");
+      await this.executeCommandWithTauri("spicetify restore");
+
+      // Then create a new backup
+      this.appendOutput("\nStep 2: Creating a new backup...\n");
+      await this.executeCommandWithTauri("spicetify backup");
+
+      // Finally apply the customizations
+      this.appendOutput("\nStep 3: Applying Spicetify customizations...\n");
+      await this.executeCommandWithTauri("spicetify apply");
+    } catch (error) {
+      throw new Error(`Repair process failed: ${error}`);
     }
   }
 
