@@ -47,7 +47,7 @@ Grab the latest release from the **[Releases](https://github.com/FIREPAWER07/Spi
 ---
 
 ## ❗ Known Issues
-- **Uninstall, Repair and Backup not working** – **TOP PRIORITY**
+- **Broken update verifier (Of the installer)** - **TOP PRIORITY**
 - **Progress bar bugged** – **LOW PRIORITY**
 - **Slow installation** – **MEDIUM PRIORITY**
 
