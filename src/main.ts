@@ -475,14 +475,14 @@ class SpicetifyInstallerApp {
       this.updateVersionUI(versionInfo);
     } catch (error) {
       console.error("Error checking versions:", error);
-      this.appVersionElement.textContent = "App v1.0.0";
+      this.appVersionElement.textContent = "App v1.0.2-Alpha";
       this.spicetifyVersionElement.textContent = "Version check failed";
-      this.footerVersionElement.textContent = "v1.0.0";
+      this.footerVersionElement.textContent = "v1.0.2-Alpha";
     }
   }
 
   private updateVersionUI(versionInfo: VersionInfo): void {
-    const appVersion = versionInfo.installerVersion || "1.0.0";
+    const appVersion = versionInfo.installerVersion || "v1.0.2-Alpha";
     this.appVersionElement.textContent = `App v${appVersion}`;
     this.appVersionElement.classList.add("app-version-badge");
     this.footerVersionElement.textContent = `v${appVersion}`;
@@ -558,7 +558,7 @@ class SpicetifyInstallerApp {
       if (versionInfo.hasInstallerUpdate) {
         this.showUpdateModal(
           "installer",
-          versionInfo.latestInstallerVersion || "1.1.0"
+          versionInfo.latestInstallerVersion || "v1.0.2-Alpha"
         );
       } else if (versionInfo.hasSpicetifyUpdate) {
         this.showUpdateModal("spicetify", "");
