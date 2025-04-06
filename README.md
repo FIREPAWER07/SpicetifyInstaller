@@ -47,7 +47,6 @@ Grab the latest release from the **[Releases](https://github.com/FIREPAWER07/Spi
 ---
 
 ## ❗ Known Issues
-- **Broken update verifier (Of the installer)** - **TOP PRIORITY**
 - **Progress bar bugged** – **LOW PRIORITY**
 - **Slow installation** – **MEDIUM PRIORITY**
 
@@ -86,7 +85,7 @@ I'm a **beginner programmer** who started with no prior experience. I built this
 ## 💖 Support Me
 If you appreciate my work and want to support the development of this project, consider buying me a coffee:
 
-[![Support me on Ko-fi](https://raw.githubusercontent.com/marklchaves/will-work-for-ko-fi/master/assets/ko-fi-btn.svg)](https://ko-fi.com/firepawer07)
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/D1D31CKA7D)
 
 ---
 
