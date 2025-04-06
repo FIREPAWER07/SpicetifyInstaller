@@ -209,7 +209,9 @@ class SpicetifyInstallerApp {
             </div>
             <div class="latest-version">
               <span class="version-label">Latest version:</span>
-              <span class="version-value">v${version}</span>
+              <span class="version-value">v${
+                version.includes("-Alpha") ? version : `${version}-Alpha`
+              }</span>
             </div>
           </div>
           <p class="update-benefits">
@@ -523,24 +525,35 @@ class SpicetifyInstallerApp {
     }
   }
 
-  // Update the updateVersionUI method to add "v" prefix to version numbers
+  // Update the updateVersionUI method to add "-Alpha" suffix to version numbers
   private updateVersionUI(versionInfo: VersionInfo): void {
     const appVersion = versionInfo.installerVersion || "1.0.2-Alpha";
-    this.appVersionElement.textContent = `App v${appVersion}`;
+    // Add "-Alpha" suffix if it's not already there
+    const formattedAppVersion = appVersion.includes("-Alpha")
+      ? appVersion
+      : `${appVersion}-Alpha`;
+
+    this.appVersionElement.textContent = `App v${formattedAppVersion}`;
     this.appVersionElement.classList.add("app-version-badge");
-    this.footerVersionElement.textContent = `v${appVersion}`;
+    this.footerVersionElement.textContent = `v${formattedAppVersion}`;
 
     // Show latest version in title if available
     if (versionInfo.latestInstallerVersion) {
+      // Format latest version with "-Alpha" suffix if needed
+      const formattedLatestVersion =
+        versionInfo.latestInstallerVersion.includes("-Alpha")
+          ? versionInfo.latestInstallerVersion
+          : `${versionInfo.latestInstallerVersion}-Alpha`;
+
       // Check if current version is higher than latest version
       const isHigherThanLatest = this.isVersionHigherThanLatest(
-        appVersion,
-        versionInfo.latestInstallerVersion
+        formattedAppVersion,
+        formattedLatestVersion
       );
 
       if (isHigherThanLatest) {
         // Handle case where local version is higher than latest (possibly unreleased/dev version)
-        this.appVersionElement.title = `Warning: Your version (v${appVersion}) is higher than the latest release (v${versionInfo.latestInstallerVersion})`;
+        this.appVersionElement.title = `Warning: Your version (v${formattedAppVersion}) is higher than the latest release (v${formattedLatestVersion})`;
         this.appVersionElement.classList.remove(
           "success-text",
           "warning-text",
@@ -549,7 +562,7 @@ class SpicetifyInstallerApp {
         this.appVersionElement.classList.add("error-text", "version-badge");
       } else if (versionInfo.hasInstallerUpdate) {
         // Normal update case
-        this.appVersionElement.title = `Latest version: v${versionInfo.latestInstallerVersion}`;
+        this.appVersionElement.title = `Latest version: v${formattedLatestVersion}`;
         this.appVersionElement.classList.remove("success-text", "error-text");
         this.appVersionElement.classList.add(
           "warning-text",
@@ -609,12 +622,19 @@ class SpicetifyInstallerApp {
       this.spicetifyVersionElement.title = "";
     }
 
+    // Format latest version with "-Alpha" suffix if needed
+    const formattedLatestVersion =
+      versionInfo.latestInstallerVersion &&
+      (versionInfo.latestInstallerVersion.includes("-Alpha")
+        ? versionInfo.latestInstallerVersion
+        : `${versionInfo.latestInstallerVersion}-Alpha`);
+
     // Check if current version is higher than latest version
     const isHigherThanLatest =
       versionInfo.latestInstallerVersion &&
       this.isVersionHigherThanLatest(
-        appVersion,
-        versionInfo.latestInstallerVersion
+        formattedAppVersion,
+        formattedLatestVersion!
       );
 
     if (isHigherThanLatest) {
@@ -641,7 +661,7 @@ class SpicetifyInstallerApp {
         this.updateNotificationElement.textContent =
           "Installer & Spicetify Updates Available!";
       } else if (versionInfo.hasInstallerUpdate) {
-        this.updateNotificationElement.textContent = `Update Available: v${versionInfo.latestInstallerVersion}`;
+        this.updateNotificationElement.textContent = `Update Available: v${formattedLatestVersion}`;
       } else {
         this.updateNotificationElement.textContent =
           "Spicetify Update Available!";
@@ -696,23 +716,36 @@ class SpicetifyInstallerApp {
     try {
       const versionInfo = await invoke<VersionInfo>("check_versions");
 
+      // Format versions with "-Alpha" suffix if needed
+      const formattedAppVersion = versionInfo.installerVersion.includes(
+        "-Alpha"
+      )
+        ? versionInfo.installerVersion
+        : `${versionInfo.installerVersion}-Alpha`;
+
+      const formattedLatestVersion =
+        versionInfo.latestInstallerVersion &&
+        (versionInfo.latestInstallerVersion.includes("-Alpha")
+          ? versionInfo.latestInstallerVersion
+          : `${versionInfo.latestInstallerVersion}-Alpha`);
+
       // Check if current version is higher than latest
       const isHigherThanLatest =
         versionInfo.latestInstallerVersion &&
         this.isVersionHigherThanLatest(
-          versionInfo.installerVersion,
-          versionInfo.latestInstallerVersion
+          formattedAppVersion,
+          formattedLatestVersion!
         );
 
       if (isHigherThanLatest) {
         this.showVersionWarningModal(
-          versionInfo.installerVersion,
-          versionInfo.latestInstallerVersion || ""
+          formattedAppVersion,
+          formattedLatestVersion || ""
         );
       } else if (versionInfo.hasInstallerUpdate) {
         this.showUpdateModal(
           "installer",
-          versionInfo.latestInstallerVersion || "v1.0.2-Alpha"
+          versionInfo.latestInstallerVersion || "1.0.2"
         );
       } else if (versionInfo.hasSpicetifyUpdate) {
         this.showUpdateModal("spicetify", "");
