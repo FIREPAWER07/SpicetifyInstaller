@@ -1,6 +1,6 @@
 [package]
 name = "spicetify-installer"
-version = "1.0.3"
+version = "1.0.3-alpha"
 description = "An unofficial Spicetify installer built with Tauri for a seamless setup experience. This lightweight app automates the installation and configuration of Spicetify, allowing you to customize your Spotify client with ease."
 authors = ["FIREPAWER07"]
 license = "GNU GPLv3 (GNU General Public License v3.0)"
