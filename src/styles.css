@@ -1316,3 +1316,63 @@ body {
 .modal.visible .modal-content {
   transform: translateY(0) scale(1);
 }
+
+/* Add styles for the version warning modal */
+.warning-icon {
+  background: linear-gradient(
+    135deg,
+    rgba(226, 33, 52, 0.2),
+    rgba(255, 80, 80, 0.2)
+  );
+}
+
+.warning-icon .material-icons {
+  color: var(--error);
+}
+
+.warning-comparison {
+  background: rgba(226, 33, 52, 0.1);
+  border: 1px solid rgba(226, 33, 52, 0.2);
+}
+
+.error-value {
+  color: var(--error) !important;
+  font-weight: 700;
+}
+
+.version-arrow .material-icons {
+  color: var(--error);
+}
+
+.error-notification {
+  background: linear-gradient(135deg, #e22134, #ff5050);
+  animation: pulse-error 2s infinite ease-in-out;
+}
+
+.error-notification::before {
+  content: "warning";
+}
+
+.error-notification:hover {
+  background: linear-gradient(135deg, #ff5050, #e22134);
+  box-shadow: 0 4px 12px rgba(226, 33, 52, 0.4);
+}
+
+@keyframes pulse-error {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+/* Update modal header for warning state */
+.update-modal-content .modal-header.warning-header {
+  background: linear-gradient(
+    90deg,
+    rgba(226, 33, 52, 0.8),
+    rgba(255, 80, 80, 0.8)
+  );
+}

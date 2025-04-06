@@ -532,18 +532,38 @@ class SpicetifyInstallerApp {
 
     // Show latest version in title if available
     if (versionInfo.latestInstallerVersion) {
-      this.appVersionElement.title = `Latest version: v${versionInfo.latestInstallerVersion}`;
+      // Check if current version is higher than latest version
+      const isHigherThanLatest = this.isVersionHigherThanLatest(
+        appVersion,
+        versionInfo.latestInstallerVersion
+      );
 
-      // Add visual indicator if update is available
-      if (versionInfo.hasInstallerUpdate) {
-        this.appVersionElement.classList.remove("success-text");
+      if (isHigherThanLatest) {
+        // Handle case where local version is higher than latest (possibly unreleased/dev version)
+        this.appVersionElement.title = `Warning: Your version (v${appVersion}) is higher than the latest release (v${versionInfo.latestInstallerVersion})`;
+        this.appVersionElement.classList.remove(
+          "success-text",
+          "warning-text",
+          "updatable"
+        );
+        this.appVersionElement.classList.add("error-text", "version-badge");
+      } else if (versionInfo.hasInstallerUpdate) {
+        // Normal update case
+        this.appVersionElement.title = `Latest version: v${versionInfo.latestInstallerVersion}`;
+        this.appVersionElement.classList.remove("success-text", "error-text");
         this.appVersionElement.classList.add(
           "warning-text",
           "version-badge",
           "updatable"
         );
       } else {
-        this.appVersionElement.classList.remove("warning-text", "updatable");
+        // Up to date case
+        this.appVersionElement.title = `You have the latest version`;
+        this.appVersionElement.classList.remove(
+          "warning-text",
+          "updatable",
+          "error-text"
+        );
         this.appVersionElement.classList.add("success-text", "version-badge");
       }
     }
@@ -589,8 +609,32 @@ class SpicetifyInstallerApp {
       this.spicetifyVersionElement.title = "";
     }
 
-    if (versionInfo.hasInstallerUpdate || versionInfo.hasSpicetifyUpdate) {
+    // Check if current version is higher than latest version
+    const isHigherThanLatest =
+      versionInfo.latestInstallerVersion &&
+      this.isVersionHigherThanLatest(
+        appVersion,
+        versionInfo.latestInstallerVersion
+      );
+
+    if (isHigherThanLatest) {
+      // Show warning for higher-than-latest version
       this.updateNotificationElement.classList.remove("hidden");
+      this.updateNotificationElement.classList.add(
+        "update-notification-badge",
+        "error-notification"
+      );
+      this.updateNotificationElement.textContent =
+        "Warning: Unreleased Version";
+    } else if (
+      versionInfo.hasInstallerUpdate ||
+      versionInfo.hasSpicetifyUpdate
+    ) {
+      // Normal update notification
+      this.updateNotificationElement.classList.remove(
+        "hidden",
+        "error-notification"
+      );
       this.updateNotificationElement.classList.add("update-notification-badge");
 
       if (versionInfo.hasInstallerUpdate && versionInfo.hasSpicetifyUpdate) {
@@ -607,11 +651,65 @@ class SpicetifyInstallerApp {
     }
   }
 
+  // Add a helper method to compare versions
+  private isVersionHigherThanLatest(
+    currentVersion: string,
+    latestVersion: string
+  ): boolean {
+    // Remove 'v' prefix if present
+    const current = currentVersion.replace(/^v/, "");
+    const latest = latestVersion.replace(/^v/, "");
+
+    // Extract numeric parts for comparison
+    const currentParts = current.split(/[.-]/).map((part) => {
+      const num = Number.parseInt(part.replace(/[^\d]/g, ""));
+      return isNaN(num) ? 0 : num;
+    });
+
+    const latestParts = latest.split(/[.-]/).map((part) => {
+      const num = Number.parseInt(part.replace(/[^\d]/g, ""));
+      return isNaN(num) ? 0 : num;
+    });
+
+    // Compare each part
+    for (
+      let i = 0;
+      i < Math.max(currentParts.length, latestParts.length);
+      i++
+    ) {
+      const currentPart = currentParts[i] || 0;
+      const latestPart = latestParts[i] || 0;
+
+      if (currentPart > latestPart) {
+        return true;
+      } else if (currentPart < latestPart) {
+        return false;
+      }
+    }
+
+    // If we get here, versions are equal
+    return false;
+  }
+
+  // Update the handleUpdateClick method to handle the higher-than-latest case
   private async handleUpdateClick(): Promise<void> {
     try {
       const versionInfo = await invoke<VersionInfo>("check_versions");
 
-      if (versionInfo.hasInstallerUpdate) {
+      // Check if current version is higher than latest
+      const isHigherThanLatest =
+        versionInfo.latestInstallerVersion &&
+        this.isVersionHigherThanLatest(
+          versionInfo.installerVersion,
+          versionInfo.latestInstallerVersion
+        );
+
+      if (isHigherThanLatest) {
+        this.showVersionWarningModal(
+          versionInfo.installerVersion,
+          versionInfo.latestInstallerVersion || ""
+        );
+      } else if (versionInfo.hasInstallerUpdate) {
         this.showUpdateModal(
           "installer",
           versionInfo.latestInstallerVersion || "v1.0.2-Alpha"
@@ -623,6 +721,60 @@ class SpicetifyInstallerApp {
       console.error("Error handling update:", error);
       this.appendOutput(`Error checking for updates: ${error}\n`);
     }
+  }
+
+  // Add a new method to show the version warning modal
+  private showVersionWarningModal(
+    currentVersion: string,
+    latestVersion: string
+  ): void {
+    if (!this.updateModal) {
+      this.createUpdateModal();
+    }
+
+    const title = document.getElementById("update-modal-title")!;
+    const message = document.getElementById("update-modal-message")!;
+    const downloadBtn = document.getElementById("update-download-btn")!;
+
+    title.textContent = "Warning: Unreleased Version";
+    title.style.color = "#e22134"; // Error color
+
+    message.innerHTML = `
+    <div class="update-info-container">
+      <div class="update-icon warning-icon">
+        <span class="material-icons">warning</span>
+      </div>
+      <div class="update-details">
+        <p class="update-intro error-text">You are using an unreleased or development version!</p>
+        <div class="version-comparison warning-comparison">
+          <div class="current-version">
+            <span class="version-label">Your version:</span>
+            <span class="version-value error-value">v${currentVersion}</span>
+          </div>
+          <div class="version-arrow">
+            <span class="material-icons">arrow_downward</span>
+          </div>
+          <div class="latest-version">
+            <span class="version-label">Latest stable release:</span>
+            <span class="version-value">v${latestVersion}</span>
+          </div>
+        </div>
+        <p class="update-benefits warning-text">
+          Your version appears to be newer than the latest official release. This could be a development build or an unreleased version. Consider installing the latest stable release for better compatibility and support.
+        </p>
+      </div>
+    </div>
+  `;
+
+    downloadBtn.innerHTML = `
+    <span class="material-icons">get_app</span>
+    Install Latest Stable Release
+  `;
+
+    this.updateModal!.classList.remove("hidden");
+    setTimeout(() => {
+      this.updateModal!.classList.add("visible");
+    }, 10);
   }
 
   private async handleSpicetifyVersionClick(): Promise<void> {
