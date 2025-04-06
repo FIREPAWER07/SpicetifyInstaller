@@ -1,6 +1,6 @@
 [package]
 name = "spicetify-installer"
-version = "1.0.0"
+version = "1.0.3-Alpha"
 description = "An unofficial Spicetify installer built with Tauri for a seamless setup experience. This lightweight app automates the installation and configuration of Spicetify, allowing you to customize your Spotify client with ease."
 authors = ["FIREPAWER07"]
 license = "GNU GPLv3 (GNU General Public License v3.0)"
@@ -20,6 +20,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-core = "2.0.0-beta.0"
 tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.11", features = ["json"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-cli = "2"

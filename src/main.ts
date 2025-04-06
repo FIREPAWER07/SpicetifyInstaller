@@ -109,6 +109,7 @@ class SpicetifyInstallerApp {
     this.footerVersionElement.textContent = "Loading...";
   }
 
+  // Update the createUpdateModal method to include better styling
   private createUpdateModal(): void {
     // Create modal if it doesn't exist
     if (!document.getElementById("update-modal")) {
@@ -117,28 +118,28 @@ class SpicetifyInstallerApp {
       modal.className = "modal hidden";
 
       modal.innerHTML = `
-        <div class="modal-content update-modal-content">
-          <div class="modal-header">
-            <h2 id="update-modal-title">Update Available</h2>
-            <button id="close-update-modal" class="close-button">
+      <div class="modal-content update-modal-content">
+        <div class="modal-header">
+          <h2 id="update-modal-title">Update Available</h2>
+          <button id="close-update-modal" class="close-button">
+            <span class="material-icons">close</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div id="update-modal-message">An update is available.</div>
+          <div class="update-actions">
+            <button id="update-download-btn" class="update-btn">
+              <span class="material-icons">download</span>
+              Download Update
+            </button>
+            <button id="update-cancel-btn" class="cancel-btn">
               <span class="material-icons">close</span>
+              Remind Me Later
             </button>
           </div>
-          <div class="modal-body">
-            <p id="update-modal-message">An update is available.</p>
-            <div class="update-actions">
-              <button id="update-download-btn" class="update-btn">
-                <span class="material-icons">download</span>
-                Download Update
-              </button>
-              <button id="update-cancel-btn" class="cancel-btn">
-                <span class="material-icons">close</span>
-                Cancel
-              </button>
-            </div>
-          </div>
         </div>
-      `;
+      </div>
+    `;
 
       document.body.appendChild(modal);
 
@@ -174,6 +175,7 @@ class SpicetifyInstallerApp {
     }
   }
 
+  // Update the showUpdateModal method to create a more attractive update modal
   private showUpdateModal(
     type: "installer" | "spicetify",
     version: string
@@ -187,10 +189,50 @@ class SpicetifyInstallerApp {
 
     if (type === "installer") {
       title.textContent = "Installer Update Available";
-      message.textContent = `A new version of the Spicetify Installer is available (v${version}). Would you like to download and install it now?`;
+      message.innerHTML = `
+      <div class="update-info-container">
+        <div class="update-icon">
+          <span class="material-icons">system_update</span>
+        </div>
+        <div class="update-details">
+          <p class="update-intro">A new version of the Spicetify Installer is available!</p>
+          <div class="version-comparison">
+            <div class="current-version">
+              <span class="version-label">Current version:</span>
+              <span class="version-value">${this.appVersionElement.textContent?.replace(
+                "App ",
+                ""
+              )}</span>
+            </div>
+            <div class="version-arrow">
+              <span class="material-icons">arrow_forward</span>
+            </div>
+            <div class="latest-version">
+              <span class="version-label">Latest version:</span>
+              <span class="version-value">v${version}</span>
+            </div>
+          </div>
+          <p class="update-benefits">
+            This update includes bug fixes, performance improvements, and new features.
+          </p>
+        </div>
+      </div>
+    `;
     } else {
       title.textContent = "Spicetify Update Available";
-      message.textContent = `A new version of Spicetify is available. Would you like to update now?`;
+      message.innerHTML = `
+      <div class="update-info-container">
+        <div class="update-icon">
+          <span class="material-icons">update</span>
+        </div>
+        <div class="update-details">
+          <p class="update-intro">A new version of Spicetify is available!</p>
+          <p class="update-benefits">
+            Updating Spicetify ensures you have the latest features and compatibility with Spotify.
+          </p>
+        </div>
+      </div>
+    `;
     }
 
     this.updateModal!.classList.remove("hidden");
@@ -481,14 +523,29 @@ class SpicetifyInstallerApp {
     }
   }
 
+  // Update the updateVersionUI method to add "v" prefix to version numbers
   private updateVersionUI(versionInfo: VersionInfo): void {
-    const appVersion = versionInfo.installerVersion || "v1.0.2-Alpha";
+    const appVersion = versionInfo.installerVersion || "1.0.2-Alpha";
     this.appVersionElement.textContent = `App v${appVersion}`;
     this.appVersionElement.classList.add("app-version-badge");
     this.footerVersionElement.textContent = `v${appVersion}`;
 
+    // Show latest version in title if available
     if (versionInfo.latestInstallerVersion) {
-      this.appVersionElement.title = `Latest version: ${versionInfo.latestInstallerVersion}`;
+      this.appVersionElement.title = `Latest version: v${versionInfo.latestInstallerVersion}`;
+
+      // Add visual indicator if update is available
+      if (versionInfo.hasInstallerUpdate) {
+        this.appVersionElement.classList.remove("success-text");
+        this.appVersionElement.classList.add(
+          "warning-text",
+          "version-badge",
+          "updatable"
+        );
+      } else {
+        this.appVersionElement.classList.remove("warning-text", "updatable");
+        this.appVersionElement.classList.add("success-text", "version-badge");
+      }
     }
 
     if (versionInfo.spicetifyVersion) {
@@ -540,8 +597,7 @@ class SpicetifyInstallerApp {
         this.updateNotificationElement.textContent =
           "Installer & Spicetify Updates Available!";
       } else if (versionInfo.hasInstallerUpdate) {
-        this.updateNotificationElement.textContent =
-          "Installer Update Available!";
+        this.updateNotificationElement.textContent = `Update Available: v${versionInfo.latestInstallerVersion}`;
       } else {
         this.updateNotificationElement.textContent =
           "Spicetify Update Available!";

@@ -26,8 +26,71 @@ pub struct VersionInfo {
 use std::sync::atomic::{AtomicBool, Ordering};
 static CHECKING_UPDATES: AtomicBool = AtomicBool::new(false);
 
+// Replace the check_github_release function with this implementation that actually fetches from GitHub
 async fn check_github_release() -> Result<(String, String), String> {
-    Ok(("1.1.0".to_string(), "https://github.com/FIREPAWER07/spicetify-installer/releases/download/v1.1.0/spicetify-installer-1.1.0-setup.exe".to_string()))
+    println!("Checking for latest release on GitHub...");
+
+    // Create a client with appropriate headers for GitHub API
+    let client = reqwest::Client::builder()
+        .user_agent("Spicetify-Installer")
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    // Fetch the latest release information from GitHub API
+    let response = client
+        .get("https://api.github.com/repos/FIREPAWER07/SpicetifyInstaller/releases/latest")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch latest release: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "GitHub API returned status code: {}",
+            response.status()
+        ));
+    }
+
+    let release_info: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse GitHub response: {}", e))?;
+
+    // Extract the tag name (version) and download URL
+    let tag_name = release_info["tag_name"]
+        .as_str()
+        .ok_or("Missing tag_name in GitHub response")?
+        .to_string();
+
+    // Find the Windows asset URL
+    let assets = release_info["assets"]
+        .as_array()
+        .ok_or("Missing assets in GitHub response")?;
+    let mut download_url = String::new();
+
+    for asset in assets {
+        let name = asset["name"].as_str().unwrap_or("");
+        if name.ends_with(".exe") || name.contains("setup") {
+            download_url = asset["browser_download_url"]
+                .as_str()
+                .ok_or("Missing download URL")?
+                .to_string();
+            break;
+        }
+    }
+
+    // If no specific asset was found, use the general release URL
+    if download_url.is_empty() {
+        download_url = release_info["html_url"]
+            .as_str()
+            .ok_or("Missing release URL")?
+            .to_string();
+    }
+
+    println!(
+        "Found latest version: {} with URL: {}",
+        tag_name, download_url
+    );
+    Ok((tag_name.trim_start_matches('v').to_string(), download_url))
 }
 
 #[tauri::command]
@@ -684,7 +747,7 @@ catch {
     }
 }
 
-// Replace the check_versions function with this improved version that handles missing Spicetify better
+// Update the check_versions function to add the Cargo.toml dependency
 #[tauri::command]
 pub async fn check_versions() -> Result<VersionInfo, String> {
     if CHECKING_UPDATES
@@ -694,7 +757,8 @@ pub async fn check_versions() -> Result<VersionInfo, String> {
         return Err("Already checking for updates".to_string());
     }
 
-    let installer_version = "1.0.1".to_string();
+    // Get the current installer version from Cargo.toml
+    let installer_version = env!("CARGO_PKG_VERSION").to_string();
     let mut diagnostic_info = String::new();
 
     // First check if the Spicetify directory exists
@@ -856,8 +920,51 @@ pub async fn check_versions() -> Result<VersionInfo, String> {
         }
     };
 
+    // Replace with this improved version comparison that handles alpha/beta versions:
     let has_installer_update = if let Some(latest) = &latest_version {
-        latest != &installer_version
+        println!(
+            "Comparing versions: current={}, latest={}",
+            installer_version, latest
+        );
+
+        // First, try to compare versions directly as strings
+        if latest != &installer_version {
+            // Extract numeric parts for comparison
+            let current_parts: Vec<&str> =
+                installer_version.split(|c: char| !c.is_digit(10)).collect();
+            let latest_parts: Vec<&str> = latest.split(|c: char| !c.is_digit(10)).collect();
+
+            let mut is_newer = false;
+
+            // Compare each numeric part
+            for i in 0..std::cmp::min(current_parts.len(), latest_parts.len()) {
+                if !current_parts[i].is_empty() && !latest_parts[i].is_empty() {
+                    let current_num = current_parts[i].parse::<i32>().unwrap_or(0);
+                    let latest_num = latest_parts[i].parse::<i32>().unwrap_or(0);
+
+                    if latest_num != current_num {
+                        is_newer = latest_num > current_num;
+                        break;
+                    }
+                }
+            }
+
+            // If all numeric parts are equal, the longer version is considered newer
+            // (e.g., "1.0.2" is newer than "1.0")
+            if !is_newer && latest_parts.len() != current_parts.len() {
+                is_newer = latest_parts.len() > current_parts.len();
+            }
+
+            // If we get here and still not determined, compare the full strings
+            // This handles cases like "1.0.1-Alpha" vs "1.0.2-Alpha"
+            if !is_newer {
+                is_newer = latest > &installer_version;
+            }
+
+            is_newer
+        } else {
+            false
+        }
     } else {
         false
     };

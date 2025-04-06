@@ -2,115 +2,64 @@ export class DropdownHandler {
   private dropdownButton: HTMLElement;
   private dropdownMenu: HTMLElement;
   private dropdownIcon: HTMLElement;
-  private selectedOptionText: HTMLElement;
-  private isOpen = false;
-  private onSelectCallback: (optionName: string, command: string) => void;
-  private scrollHandler: (() => void) | null = null;
+  private selectedOption: HTMLElement;
+  private onItemSelect: (optionName: string, command: string) => void;
 
-  constructor(onSelect: (optionName: string, command: string) => void) {
-    this.onSelectCallback = onSelect;
+  constructor(onItemSelect: (optionName: string, command: string) => void) {
     this.dropdownButton = document.getElementById("dropdown-button")!;
+    this.dropdownMenu = document.getElementById("dropdown-menu")!;
     this.dropdownIcon = document.getElementById("dropdown-icon")!;
-    this.selectedOptionText = document.getElementById("selected-option")!;
-
-    this.createDropdownInBody();
+    this.selectedOption = document.getElementById("selected-option")!;
+    this.onItemSelect = onItemSelect;
 
     this.initEventListeners();
   }
 
-  private createDropdownInBody() {
-    const originalDropdown = document.getElementById("dropdown-menu");
-    if (!originalDropdown) {
-      console.error("Original dropdown not found");
-      return;
-    }
-
-    const newDropdown = document.createElement("div");
-    newDropdown.id = "dropdown-menu-portal";
-    newDropdown.className = "dropdown-menu-portal hidden";
-    newDropdown.innerHTML = originalDropdown.innerHTML;
-
-    document.body.appendChild(newDropdown);
-
-    this.dropdownMenu = newDropdown;
-
-    originalDropdown.style.display = "none";
-  }
-
-  private initEventListeners() {
-    this.dropdownButton.addEventListener("click", (e) => {
-      e.stopPropagation();
+  private initEventListeners(): void {
+    this.dropdownButton.addEventListener("click", () => {
       this.toggleDropdown();
     });
 
-    document.addEventListener("click", (e) => {
-      if (this.isOpen && !this.dropdownMenu.contains(e.target as Node)) {
-        this.closeDropdown();
+    this.dropdownMenu.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement;
+      if (
+        target.classList.contains("dropdown-item") ||
+        target.parentElement?.classList.contains("dropdown-item")
+      ) {
+        const dropdownItem = target.classList.contains("dropdown-item")
+          ? target
+          : target.parentElement;
+        const command = dropdownItem?.getAttribute("data-command") || "";
+        const optionName =
+          (dropdownItem?.querySelector(".item-text") as HTMLElement)
+            ?.textContent || "";
+        this.selectItem(optionName, command);
       }
     });
 
-    const dropdownItems = this.dropdownMenu.querySelectorAll(".dropdown-item");
-    dropdownItems.forEach((item) => {
-      item.addEventListener("click", () => {
-        const command = (item as HTMLElement).dataset.command || "";
-        const optionName = item.querySelector(".item-text")?.textContent || "";
-        this.selectOption(optionName, command);
-      });
+    document.addEventListener("click", (event) => {
+      if (
+        !this.dropdownButton.contains(event.target as Node) &&
+        this.dropdownMenu.classList.contains("visible")
+      ) {
+        this.closeDropdown();
+      }
     });
   }
 
-  private toggleDropdown() {
-    if (this.isOpen) {
-      this.closeDropdown();
-    } else {
-      this.openDropdown();
-    }
+  private toggleDropdown(): void {
+    this.dropdownMenu.classList.toggle("visible");
+    this.dropdownIcon.classList.toggle("rotate");
   }
 
-  private updateDropdownPosition = () => {
-    const buttonRect = this.dropdownButton.getBoundingClientRect();
-    this.dropdownMenu.style.width = `${buttonRect.width}px`;
-    this.dropdownMenu.style.left = `${buttonRect.left}px`;
-    this.dropdownMenu.style.top = `${buttonRect.bottom + 5}px`;
-  };
-
-  private openDropdown() {
-    this.updateDropdownPosition();
-
-    this.dropdownMenu.classList.remove("hidden");
-    setTimeout(() => {
-      this.dropdownMenu.classList.add("visible");
-    }, 10);
-
-    this.dropdownIcon.textContent = "expand_less";
-    this.dropdownIcon.classList.add("rotate");
-
-    this.isOpen = true;
-
-    this.scrollHandler = this.updateDropdownPosition;
-    window.addEventListener("scroll", this.scrollHandler);
-  }
-
-  private closeDropdown() {
+  private closeDropdown(): void {
     this.dropdownMenu.classList.remove("visible");
-    setTimeout(() => {
-      this.dropdownMenu.classList.add("hidden");
-    }, 300);
-
-    this.dropdownIcon.textContent = "expand_more";
     this.dropdownIcon.classList.remove("rotate");
-
-    this.isOpen = false;
-
-    if (this.scrollHandler) {
-      window.removeEventListener("scroll", this.scrollHandler);
-      this.scrollHandler = null;
-    }
   }
 
-  private selectOption(optionName: string, command: string) {
-    this.selectedOptionText.textContent = optionName;
+  private selectItem(optionName: string, command: string): void {
+    this.selectedOption.textContent = optionName;
+    this.onItemSelect(optionName, command);
     this.closeDropdown();
-    this.onSelectCallback(optionName, command);
   }
 }
