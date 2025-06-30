@@ -1,53 +1,117 @@
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { DropdownHandler } from "./dropdown-handler";
+import { invoke } from "@tauri-apps/api/core"
+import { listen } from "@tauri-apps/api/event"
+import { DropdownHandler } from "./dropdown-handler"
 
 interface SpicetifyCommand {
-  name: string;
-  command: string;
-  description: string;
+  name: string
+  command: string
+  description: string
 }
 
 interface VersionInfo {
-  installerVersion: string;
-  spicetifyVersion: string | null;
-  hasInstallerUpdate: boolean;
-  hasSpicetifyUpdate: boolean;
-  latestInstallerVersion: string | null;
-  latestInstallerUrl: string | null;
+  installerVersion: string
+  spicetifyVersion: string | null
+  hasInstallerUpdate: boolean
+  hasSpicetifyUpdate: boolean
+  latestInstallerVersion: string | null
+  latestInstallerUrl: string | null
+}
+
+class LoadingManager {
+  private loadingScreen: HTMLElement
+  private mainApp: HTMLElement
+  private loadingText: HTMLElement
+  private steps: NodeListOf<HTMLElement>
+  private currentStep = 0
+
+  constructor() {
+    this.loadingScreen = document.getElementById("loading-screen")!
+    this.mainApp = document.getElementById("main-app")!
+    this.loadingText = document.getElementById("loading-text")!
+    this.steps = document.querySelectorAll(".loading-step")
+  }
+
+  updateLoadingText(text: string): void {
+    this.loadingText.textContent = text
+  }
+
+  completeStep(stepIndex: number): void {
+    if (stepIndex < this.steps.length) {
+      const step = this.steps[stepIndex]
+      step.classList.remove("active")
+      step.classList.add("completed")
+
+      const statusIcon = step.querySelector(".step-status")!
+      statusIcon.textContent = "check_circle"
+    }
+  }
+
+  activateStep(stepIndex: number): void {
+    // Deactivate previous step
+    if (this.currentStep < this.steps.length) {
+      this.steps[this.currentStep].classList.remove("active")
+    }
+
+    // Activate current step
+    if (stepIndex < this.steps.length) {
+      const step = this.steps[stepIndex]
+      step.classList.add("active")
+
+      const statusIcon = step.querySelector(".step-status")!
+      statusIcon.textContent = "hourglass_empty"
+    }
+
+    this.currentStep = stepIndex
+  }
+
+  async hideLoadingScreen(): Promise<void> {
+    return new Promise((resolve) => {
+      this.loadingScreen.classList.add("fade-out")
+      this.mainApp.classList.remove("hidden")
+
+      setTimeout(() => {
+        this.loadingScreen.style.display = "none"
+        resolve()
+      }, 800)
+    })
+  }
 }
 
 class SpicetifyInstallerApp {
-  private commandDisplay: HTMLElement;
-  private executeButton: HTMLButtonElement;
-  private outputElement: HTMLElement;
-  private outputCard: HTMLElement;
-  private clearOutputButton: HTMLElement;
-  private progressContainer: HTMLElement;
-  private progressBar: HTMLElement;
-  private progressPercentage: HTMLElement;
-  private faqButton: HTMLElement;
-  private faqModal: HTMLElement;
-  private closeFaqButton: HTMLElement;
-  private appVersionElement: HTMLElement;
-  private spicetifyVersionElement: HTMLElement;
-  private updateNotificationElement: HTMLElement;
-  private footerVersionElement: HTMLElement;
-  private updateModal: HTMLElement | null = null;
+  private dom = {
+    commandDisplay: document.getElementById("command-display")!,
+    executeButton: document.getElementById("execute-button") as HTMLButtonElement,
+    outputElement: document.getElementById("output")!,
+    outputCard: document.getElementById("output-card")!,
+    clearOutputButton: document.getElementById("clear-output")!,
+    progressBar: document.getElementById("progress-bar")!,
+    progressPercentage: document.getElementById("progress-percentage")!,
+    faqButton: document.getElementById("open-faq")!,
+    faqModal: document.getElementById("faq-modal")!,
+    closeFaqButton: document.getElementById("close-faq")!,
+    appVersionElement: document.getElementById("app-version")!,
+    spicetifyVersionElement: document.getElementById("spicetify-version")!,
+    updateNotificationElement: document.getElementById("update-notification")!,
+    footerVersionElement: document.getElementById("footer-version")!,
+  }
 
-  private dropdownHandler: DropdownHandler;
+  private dropdownHandler: DropdownHandler
+  private updateModal: HTMLElement | null = null
+  private selectedCommand: string | null = null
+  private isExecuting = false
+  private currentProgress = 0
+  private progressInterval: number | null = null
+  private progressListener: any = null
+  private versionComparisonCache = new Map<string, boolean>()
+  private updateClickTimeout: number | null = null
+  private outputBuffer = ""
+  private outputUpdateScheduled = false
+  private loadingManager: LoadingManager
 
-  private selectedCommand: string | null = null;
-  private isExecuting = false;
-  private currentProgress = 0;
-  private progressInterval: number | null = null;
-  private progressListener: any = null;
-
-  private commands: SpicetifyCommand[] = [
+  private static readonly COMMANDS: SpicetifyCommand[] = [
     {
       name: "INSTALL",
-      command:
-        "iwr -useb https://raw.githubusercontent.com/spicetify/spicetify-cli/master/install.ps1 | iex",
+      command: "iwr -useb https://raw.githubusercontent.com/spicetify/spicetify-cli/master/install.ps1 | iex",
       description: "Installs or updates Spicetify CLI on your system",
     },
     {
@@ -64,58 +128,76 @@ class SpicetifyInstallerApp {
       name: "UNINSTALL",
       command:
         'spicetify restore; Remove-Item -Path "$env:APPDATA\\spicetify" -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item -Path "$env:LOCALAPPDATA\\spicetify" -Recurse -Force -ErrorAction SilentlyContinue',
-      description:
-        "Completely removes Spicetify and restores Spotify to its original state",
+      description: "Completely removes Spicetify and restores Spotify to its original state",
     },
-  ];
+  ]
 
   constructor() {
-    this.initElements();
+    this.loadingManager = new LoadingManager()
 
-    // Initialize the dropdown handler
+    // Initialize version display elements with loading text
+    this.dom.appVersionElement.textContent = "Loading app version..."
+    this.dom.spicetifyVersionElement.textContent = "Checking Spicetify version..."
+    this.dom.footerVersionElement.textContent = "Loading..."
+
     this.dropdownHandler = new DropdownHandler((optionName, command) => {
-      this.selectOption(optionName, command);
-    });
+      this.selectOption(optionName, command)
+    })
 
-    this.initEventListeners();
-    this.createUpdateModal();
-    this.runInitialDiagnostic();
+    this.initEventListeners()
+    this.createUpdateModal()
+
+    // Start the loading sequence
+    this.startLoadingSequence()
   }
 
-  private initElements(): void {
-    this.commandDisplay = document.getElementById("command-display")!;
-    this.executeButton = document.getElementById(
-      "execute-button"
-    ) as HTMLButtonElement;
-    this.outputElement = document.getElementById("output")!;
-    this.outputCard = document.getElementById("output-card")!;
-    this.clearOutputButton = document.getElementById("clear-output")!;
-    this.progressContainer = document.getElementById("progress-container")!;
-    this.progressBar = document.getElementById("progress-bar")!;
-    this.progressPercentage = document.getElementById("progress-percentage")!;
-    this.faqButton = document.getElementById("open-faq")!;
-    this.faqModal = document.getElementById("faq-modal")!;
-    this.closeFaqButton = document.getElementById("close-faq")!;
-    this.appVersionElement = document.getElementById("app-version")!;
-    this.spicetifyVersionElement =
-      document.getElementById("spicetify-version")!;
-    this.updateNotificationElement = document.getElementById(
-      "update-notification"
-    )!;
-    this.footerVersionElement = document.getElementById("footer-version")!;
+  private async startLoadingSequence(): Promise<void> {
+    try {
+      // Step 1: Loading application
+      this.loadingManager.activateStep(0)
+      this.loadingManager.updateLoadingText("Loading application components...")
 
-    this.appVersionElement.textContent = "Loading app version...";
-    this.spicetifyVersionElement.textContent = "Checking Spicetify version...";
-    this.footerVersionElement.textContent = "Loading...";
+      // Simulate app initialization
+      await this.delay(1000)
+      this.loadingManager.completeStep(0)
+
+      // Step 2: Checking versions
+      this.loadingManager.activateStep(1)
+      this.loadingManager.updateLoadingText("Checking application and Spicetify versions...")
+
+      await this.checkVersions()
+      this.loadingManager.completeStep(1)
+
+      // Step 3: Verifying installation
+      this.loadingManager.activateStep(2)
+      this.loadingManager.updateLoadingText("Verifying Spicetify installation...")
+
+      await this.runInitialDiagnostic()
+      this.loadingManager.completeStep(2)
+
+      // Final step
+      this.loadingManager.updateLoadingText("Initialization complete!")
+      await this.delay(500)
+
+      // Hide loading screen and show main app
+      await this.loadingManager.hideLoadingScreen()
+    } catch (error) {
+      console.error("Loading sequence error:", error)
+      this.loadingManager.updateLoadingText("Error during initialization. Continuing...")
+      await this.delay(1000)
+      await this.loadingManager.hideLoadingScreen()
+    }
   }
 
-  // Update the createUpdateModal method to include better styling
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+  }
+
   private createUpdateModal(): void {
-    // Create modal if it doesn't exist
     if (!document.getElementById("update-modal")) {
-      const modal = document.createElement("div");
-      modal.id = "update-modal";
-      modal.className = "modal hidden";
+      const modal = document.createElement("div")
+      modal.id = "update-modal"
+      modal.className = "modal hidden"
 
       modal.innerHTML = `
       <div class="modal-content update-modal-content">
@@ -138,57 +220,38 @@ class SpicetifyInstallerApp {
             </button>
           </div>
         </div>
-      </div>
-    `;
+      </div>`
 
-      document.body.appendChild(modal);
+      document.body.appendChild(modal)
 
-      // Add event listeners
-      document
-        .getElementById("close-update-modal")!
-        .addEventListener("click", () => {
-          this.closeUpdateModal();
-        });
-
-      document
-        .getElementById("update-cancel-btn")!
-        .addEventListener("click", () => {
-          this.closeUpdateModal();
-        });
-
-      document
-        .getElementById("update-download-btn")!
-        .addEventListener("click", () => {
-          this.downloadUpdate();
-        });
-
-      // Close when clicking outside
       modal.addEventListener("click", (event) => {
-        if (event.target === modal) {
-          this.closeUpdateModal();
+        const target = event.target as HTMLElement
+        if (target.closest("#close-update-modal, #update-cancel-btn")) {
+          this.closeUpdateModal()
+        } else if (target.closest("#update-download-btn")) {
+          this.downloadUpdate()
+        } else if (target === modal) {
+          this.closeUpdateModal()
         }
-      });
+      })
 
-      this.updateModal = modal;
+      this.updateModal = modal
     } else {
-      this.updateModal = document.getElementById("update-modal");
+      this.updateModal = document.getElementById("update-modal")
     }
   }
 
-  // Update the showUpdateModal method to create a more attractive update modal
-  private showUpdateModal(
-    type: "installer" | "spicetify",
-    version: string
-  ): void {
+  private showUpdateModal(type: "installer" | "spicetify", version: string): void {
+    document.body.classList.add("modal-open")
     if (!this.updateModal) {
-      this.createUpdateModal();
+      this.createUpdateModal()
     }
 
-    const title = document.getElementById("update-modal-title")!;
-    const message = document.getElementById("update-modal-message")!;
+    const title = document.getElementById("update-modal-title")!
+    const message = document.getElementById("update-modal-message")!
 
     if (type === "installer") {
-      title.textContent = "Installer Update Available";
+      title.textContent = "Installer Update Available"
       message.innerHTML = `
       <div class="update-info-container">
         <div class="update-icon">
@@ -199,10 +262,7 @@ class SpicetifyInstallerApp {
           <div class="version-comparison">
             <div class="current-version">
               <span class="version-label">Current version:</span>
-              <span class="version-value">${this.appVersionElement.textContent?.replace(
-                "App ",
-                ""
-              )}</span>
+              <span class="version-value">${this.dom.appVersionElement.textContent?.replace("App ", "")}</span>
             </div>
             <div class="version-arrow">
               <span class="material-icons">arrow_forward</span>
@@ -216,10 +276,9 @@ class SpicetifyInstallerApp {
             This update includes bug fixes, performance improvements, and new features.
           </p>
         </div>
-      </div>
-    `;
+      </div>`
     } else {
-      title.textContent = "Spicetify Update Available";
+      title.textContent = "Spicetify Update Available"
       message.innerHTML = `
       <div class="update-info-container">
         <div class="update-icon">
@@ -231,513 +290,454 @@ class SpicetifyInstallerApp {
             Updating Spicetify ensures you have the latest features and compatibility with Spotify.
           </p>
         </div>
-      </div>
-    `;
+      </div>`
     }
 
-    this.updateModal!.classList.remove("hidden");
-    setTimeout(() => {
-      this.updateModal!.classList.add("visible");
-    }, 10);
+    this.updateModal!.classList.remove("hidden")
+    requestAnimationFrame(() => {
+      this.updateModal!.classList.add("visible")
+    })
   }
 
   private closeUpdateModal(): void {
+    document.body.classList.remove("modal-open")
     if (this.updateModal) {
-      this.updateModal.classList.remove("visible");
+      this.updateModal.classList.remove("visible")
       setTimeout(() => {
-        this.updateModal!.classList.add("hidden");
-      }, 300);
+        this.updateModal!.classList.add("hidden")
+      }, 300)
     }
   }
 
   private async downloadUpdate(): Promise<void> {
-    this.closeUpdateModal();
+    this.closeUpdateModal()
 
     try {
-      const versionInfo = await invoke<VersionInfo>("check_versions");
+      const versionInfo = await invoke<VersionInfo>("check_versions")
 
       if (versionInfo.hasInstallerUpdate) {
-        this.outputCard.classList.remove("hidden");
-        setTimeout(() => {
-          this.outputCard.classList.add("visible");
-        }, 10);
+        this.dom.outputCard.classList.remove("hidden")
+        requestAnimationFrame(() => {
+          this.dom.outputCard.classList.add("visible")
+        })
 
-        this.progressContainer.classList.remove("hidden");
-        this.updateProgressBar(0);
-
-        this.appendOutput("Starting automatic update download...\n");
+        this.updateProgressBar(0)
+        this.appendOutput("Starting automatic update download...\n")
 
         try {
-          await invoke("download_update");
-          this.appendOutput(
-            "Update download started. The application will restart automatically.\n"
-          );
-          this.updateProgressBar(100);
+          await invoke("download_update")
+          this.appendOutput("Update download started. The application will restart automatically.\n")
+          this.updateProgressBar(100)
         } catch (error) {
-          this.appendOutput(
-            `Failed to download update automatically: ${error}\n`
-          );
-          this.appendOutput("Opening manual download page...\n");
-          await invoke("open_download_url");
+          this.appendOutput(`Failed to download update automatically: ${error}\n`)
+          this.appendOutput("Opening manual download page...\n")
+          await invoke("open_download_url")
         }
       } else if (versionInfo.hasSpicetifyUpdate) {
-        this.selectOption("INSTALL", this.commands[0].command);
-        await this.executeCommand();
+        this.selectOption("INSTALL", SpicetifyInstallerApp.COMMANDS[0].command)
+        await this.executeCommand()
       }
     } catch (error) {
-      console.error("Error handling update:", error);
-      this.appendOutput(`Error handling update: ${error}\n`);
+      console.error("Error handling update:", error)
+      this.appendOutput(`Error handling update: ${error}\n`)
     }
   }
 
   private initEventListeners(): void {
-    this.executeButton.addEventListener("click", () => {
+    this.dom.executeButton.addEventListener("click", () => {
       if (!this.isExecuting) {
-        this.executeCommand();
+        this.executeCommand()
       }
-    });
+    })
 
-    this.clearOutputButton.addEventListener("click", () => {
-      this.clearOutput();
-    });
+    this.dom.clearOutputButton.addEventListener("click", () => {
+      this.clearOutput()
+    })
 
-    this.faqButton.addEventListener("click", () => {
-      this.openFaqUrl();
-    });
+    this.dom.faqButton.addEventListener("click", () => {
+      this.openFaqUrl()
+    })
 
-    this.closeFaqButton.addEventListener("click", () => {
-      this.closeFaqModal();
-    });
+    this.dom.closeFaqButton.addEventListener("click", () => {
+      this.closeFaqModal()
+    })
 
-    this.faqModal.addEventListener("click", (event) => {
-      if (event.target === this.faqModal) {
-        this.closeFaqModal();
+    this.dom.faqModal.addEventListener("click", (event) => {
+      if (event.target === this.dom.faqModal) {
+        this.closeFaqModal()
       }
-    });
+    })
 
-    this.updateNotificationElement.addEventListener("click", () => {
-      this.handleUpdateClick();
-    });
+    this.dom.updateNotificationElement.addEventListener(
+      "click",
+      this.throttle(() => {
+        this.handleUpdateClick()
+      }, 500),
+    )
 
-    this.spicetifyVersionElement.addEventListener("click", () => {
-      this.handleSpicetifyVersionClick();
-    });
+    this.dom.spicetifyVersionElement.addEventListener(
+      "click",
+      this.throttle(() => {
+        this.handleSpicetifyVersionClick()
+      }, 500),
+    )
+  }
+
+  private throttle(fn: Function, delay: number): (...args: any[]) => void {
+    let lastCall = 0
+    return (...args: any[]) => {
+      const now = Date.now()
+      if (now - lastCall >= delay) {
+        lastCall = now
+        fn(...args)
+      }
+    }
   }
 
   private async runInitialDiagnostic(): Promise<void> {
     try {
-      this.outputCard.classList.remove("hidden");
-      setTimeout(() => {
-        this.outputCard.classList.add("visible");
-      }, 10);
-
-      this.outputElement.textContent = "";
-      this.appendOutput("Diagnosing Spicetify installation...\n\n");
-
-      const locationInfo = await invoke<string>("check_spicetify_location");
-      this.appendOutput(locationInfo);
+      const locationInfo = await invoke<string>("check_spicetify_location")
+      console.log("Spicetify location info:", locationInfo)
 
       try {
         const output = await invoke<string>("execute_powershell_command", {
-          command:
-            "try { spicetify -v } catch { Write-Output 'Command failed' }",
-        });
-        this.appendOutput("\nSpicetify version command output:\n" + output);
+          command: "try { spicetify -v } catch { Write-Output 'Command failed' }",
+        })
+        console.log("Spicetify version command output:", output)
       } catch (error) {
-        this.appendOutput("\nFailed to run spicetify command: " + error);
+        console.log("Failed to run spicetify command:", error)
       }
-
-      await this.checkVersions();
     } catch (error) {
-      console.error("Diagnosis error:", error);
-      this.appendOutput("\nDiagnosis failed: " + error);
-      await this.checkVersions();
+      console.error("Diagnosis error:", error)
     }
   }
 
   private selectOption(optionName: string, command: string): void {
-    this.selectedCommand = command;
-    this.commandDisplay.textContent = `> ${command}`;
-    this.executeButton.disabled = false;
+    this.selectedCommand = command
+    this.dom.commandDisplay.textContent = `> ${command}`
+    this.dom.executeButton.disabled = false
   }
 
   private async executeCommand(): Promise<void> {
-    if (!this.selectedCommand || this.isExecuting) return;
+    if (!this.selectedCommand || this.isExecuting) return
 
-    this.isExecuting = true;
+    this.isExecuting = true
 
-    this.outputCard.classList.remove("hidden");
-    setTimeout(() => {
-      this.outputCard.classList.add("visible");
-    }, 10);
+    this.dom.outputCard.classList.remove("hidden")
+    requestAnimationFrame(() => {
+      this.dom.outputCard.classList.add("visible")
+    })
 
-    this.progressContainer.classList.remove("hidden");
-    this.currentProgress = 0;
-    this.updateProgressBar(0);
+    this.currentProgress = 0
+    this.updateProgressBar(0)
 
-    this.executeButton.disabled = true;
-    const originalButtonText = this.executeButton.innerHTML;
-    this.executeButton.innerHTML = '<div class="loading"></div> Executing...';
+    this.dom.executeButton.disabled = true
+    this.dom.executeButton.classList.add("executing")
+    const originalButtonText = this.dom.executeButton.innerHTML
+    this.dom.executeButton.innerHTML = `
+      <div class="loading"></div>
+      <span>Executing...</span>
+      <div class="button-progress-bar" id="progress-bar"></div>
+      <div class="button-progress-percentage" id="progress-percentage">0%</div>
+    `
 
-    this.outputElement.textContent = "";
+    this.dom.progressBar = document.getElementById("progress-bar")!
+    this.dom.progressPercentage = document.getElementById("progress-percentage")!
 
-    this.appendOutput(`> ${this.selectedCommand}\n\n`);
+    this.dom.outputElement.textContent = ""
+    this.appendOutput(`> ${this.selectedCommand}\n\n`)
 
     try {
-      this.setupProgressListener();
+      this.setupProgressListener()
 
-      // Fix for repair command - ensure correct order of operations
       if (this.selectedCommand.includes("restore backup apply")) {
-        await this.executeFixedRepairCommand();
+        await this.executeFixedRepairCommand()
       } else {
-        await this.executeCommandWithTauri(this.selectedCommand);
+        await this.executeCommandWithTauri(this.selectedCommand)
       }
 
-      this.completeProgress();
+      this.completeProgress()
+      this.appendOutput("\n<span class='success-text'>[SUCCESS] Command executed successfully!</span>\n")
 
-      this.appendOutput(
-        "\n<span class='success-text'>[SUCCESS] Command executed successfully!</span>\n"
-      );
-
-      await this.checkVersions();
+      await this.checkVersions()
     } catch (error) {
-      this.completeProgress();
-      this.appendOutput(`\n<span class='error-text'>[ERROR] ${error}</span>\n`);
+      this.completeProgress()
+      this.appendOutput(`\n<span class='error-text'>[ERROR] ${error}</span>\n`)
     } finally {
-      this.executeButton.innerHTML = originalButtonText;
-      this.executeButton.disabled = false;
-      this.isExecuting = false;
-
-      this.removeProgressListener();
+      this.dom.executeButton.innerHTML = originalButtonText
+      this.dom.executeButton.disabled = false
+      this.dom.executeButton.classList.remove("executing")
+      this.isExecuting = false
+      this.removeProgressListener()
     }
   }
 
-  // New method to fix the repair command execution
   private async executeFixedRepairCommand(): Promise<void> {
     try {
-      // First restore from backup
-      this.appendOutput("Step 1: Restoring from backup...\n");
-      await this.executeCommandWithTauri("spicetify restore");
+      this.appendOutput("Step 1: Restoring from backup...\n")
+      await this.executeCommandWithTauri("spicetify restore")
 
-      // Then create a new backup
-      this.appendOutput("\nStep 2: Creating a new backup...\n");
-      await this.executeCommandWithTauri("spicetify backup");
+      this.appendOutput("\nStep 2: Creating a new backup...\n")
+      await this.executeCommandWithTauri("spicetify backup")
 
-      // Finally apply the customizations
-      this.appendOutput("\nStep 3: Applying Spicetify customizations...\n");
-      await this.executeCommandWithTauri("spicetify apply");
+      this.appendOutput("\nStep 3: Applying Spicetify customizations...\n")
+      await this.executeCommandWithTauri("spicetify apply")
     } catch (error) {
-      throw new Error(`Repair process failed: ${error}`);
+      throw new Error(`Repair process failed: ${error}`)
     }
   }
 
   private async setupProgressListener(): Promise<void> {
     this.progressListener = await listen("progress_update", (event: any) => {
-      const progress = event.payload as number;
-      this.updateProgressBar(progress);
-    });
+      const progress = event.payload as number
+      this.updateProgressBar(progress)
+    })
   }
 
   private removeProgressListener(): void {
     if (this.progressListener) {
-      this.progressListener();
-      this.progressListener = null;
+      this.progressListener()
+      this.progressListener = null
     }
   }
 
   private async executeCommandWithTauri(command: string): Promise<void> {
     try {
-      console.log("Executing command:", command);
       const output = await invoke<string>("execute_powershell_command", {
         command,
-      });
-      console.log("Command output:", output);
-      this.appendOutput(`[PowerShell Output]\n${output}\n`);
+      })
+      this.appendOutput(`[PowerShell Output]\n${output}\n`)
     } catch (error) {
-      console.error("Error executing command:", error);
-      throw new Error(`${error}`);
+      throw new Error(`${error}`)
     }
   }
 
   private completeProgress(): void {
     if (this.progressInterval) {
-      clearInterval(this.progressInterval);
-      this.progressInterval = null;
+      clearInterval(this.progressInterval)
+      this.progressInterval = null
     }
-
-    this.updateProgressBar(100);
-
-    setTimeout(() => {
-      this.progressContainer.classList.add("hidden");
-    }, 1000);
+    this.updateProgressBar(100)
   }
 
   private updateProgressBar(percentage: number): void {
-    this.progressBar.style.width = `${percentage}%`;
-    this.progressPercentage.textContent = `${Math.round(percentage)}%`;
+    if (this.dom.progressBar) {
+      this.dom.progressBar.style.width = `${percentage}%`
+    }
+    if (this.dom.progressPercentage) {
+      this.dom.progressPercentage.textContent = `${Math.round(percentage)}%`
+    }
   }
 
   private appendOutput(text: string): void {
-    this.outputElement.innerHTML += text;
-    this.outputElement.scrollTop = this.outputElement.scrollHeight;
+    this.outputBuffer += text
+
+    if (!this.outputUpdateScheduled) {
+      this.outputUpdateScheduled = true
+      requestAnimationFrame(() => {
+        const fragment = document.createDocumentFragment()
+        const temp = document.createElement("div")
+        temp.innerHTML = this.outputBuffer
+
+        while (temp.firstChild) {
+          fragment.appendChild(temp.firstChild)
+        }
+
+        this.dom.outputElement.appendChild(fragment)
+        this.dom.outputElement.scrollTop = this.dom.outputElement.scrollHeight
+
+        this.outputBuffer = ""
+        this.outputUpdateScheduled = false
+      })
+    }
   }
 
   private clearOutput(): void {
-    this.outputElement.textContent = "";
+    this.dom.outputElement.textContent = ""
+    this.outputBuffer = ""
   }
 
   private async openFaqUrl(): Promise<void> {
     try {
-      await invoke("open_faq_url");
+      await invoke("open_faq_url")
     } catch (error) {
-      console.error("Error opening FAQ URL:", error);
-      this.openFaqModal();
+      console.error("Error opening FAQ URL:", error)
+      this.openFaqModal()
     }
   }
 
   private openFaqModal(): void {
-    this.faqModal.classList.remove("hidden");
-    setTimeout(() => {
-      this.faqModal.classList.add("visible");
-    }, 10);
+    this.dom.faqModal.classList.remove("hidden")
+    requestAnimationFrame(() => {
+      this.dom.faqModal.classList.add("visible")
+    })
   }
 
   private closeFaqModal(): void {
-    this.faqModal.classList.remove("visible");
+    this.dom.faqModal.classList.remove("visible")
     setTimeout(() => {
-      this.faqModal.classList.add("hidden");
-    }, 300);
+      this.dom.faqModal.classList.add("hidden")
+    }, 300)
   }
 
   private async checkVersions(): Promise<void> {
     try {
-      const versionInfo = await invoke<VersionInfo>("check_versions");
-      console.log("Version info received:", versionInfo);
-
-      this.updateVersionUI(versionInfo);
+      const versionInfo = await invoke<VersionInfo>("check_versions")
+      this.updateVersionUI(versionInfo)
     } catch (error) {
-      console.error("Error checking versions:", error);
-      this.appVersionElement.textContent = "App v1.0.2-Alpha";
-      this.spicetifyVersionElement.textContent = "Version check failed";
-      this.footerVersionElement.textContent = "v1.0.2-Alpha";
+      console.error("Error checking versions:", error)
+      this.dom.appVersionElement.textContent = "App v1.0.2-Alpha"
+      this.dom.spicetifyVersionElement.textContent = "Version check failed"
+      this.dom.footerVersionElement.textContent = "v1.0.2-Alpha"
     }
   }
 
-  // Update the updateVersionUI method to add "v" prefix to version numbers
-  private updateVersionUI(versionInfo: VersionInfo): void {
-    const appVersion = versionInfo.installerVersion || "1.0.2-Alpha";
-    this.appVersionElement.textContent = `App v${appVersion}`;
-    this.appVersionElement.classList.add("app-version-badge");
-    this.footerVersionElement.textContent = `v${appVersion}`;
+  private isVersionHigherThanLatest(currentVersion: string, latestVersion: string): boolean {
+    const cacheKey = `${currentVersion}:${latestVersion}`
+    if (this.versionComparisonCache.has(cacheKey)) {
+      return this.versionComparisonCache.get(cacheKey)!
+    }
 
-    // Show latest version in title if available
+    const current = currentVersion.replace(/^v/, "")
+    const latest = latestVersion.replace(/^v/, "")
+
+    const currentParts = current.split(/[.-]/).map((part) => {
+      const num = Number.parseInt(part.replace(/[^\d]/g, ""))
+      return isNaN(num) ? 0 : num
+    })
+
+    const latestParts = latest.split(/[.-]/).map((part) => {
+      const num = Number.parseInt(part.replace(/[^\d]/g, ""))
+      return isNaN(num) ? 0 : num
+    })
+
+    for (let i = 0; i < Math.max(currentParts.length, latestParts.length); i++) {
+      const currentPart = currentParts[i] || 0
+      const latestPart = latestParts[i] || 0
+
+      if (currentPart > latestPart) {
+        this.versionComparisonCache.set(cacheKey, true)
+        return true
+      } else if (currentPart < latestPart) {
+        this.versionComparisonCache.set(cacheKey, false)
+        return false
+      }
+    }
+
+    this.versionComparisonCache.set(cacheKey, false)
+    return false
+  }
+
+  private updateVersionUI(versionInfo: VersionInfo): void {
+    const appVersion = versionInfo.installerVersion || "1.0.2-Alpha"
+    this.dom.appVersionElement.textContent = `App v${appVersion}`
+    this.dom.appVersionElement.classList.add("app-version-badge")
+    this.dom.footerVersionElement.textContent = `v${appVersion}`
+
     if (versionInfo.latestInstallerVersion) {
-      // Check if current version is higher than latest version
-      const isHigherThanLatest = this.isVersionHigherThanLatest(
-        appVersion,
-        versionInfo.latestInstallerVersion
-      );
+      const isHigherThanLatest = this.isVersionHigherThanLatest(appVersion, versionInfo.latestInstallerVersion)
+
+      this.dom.appVersionElement.classList.toggle("error-text", isHigherThanLatest)
+      this.dom.appVersionElement.classList.toggle("version-badge", true)
+      this.dom.appVersionElement.classList.toggle("warning-text", versionInfo.hasInstallerUpdate && !isHigherThanLatest)
+      this.dom.appVersionElement.classList.toggle("updatable", versionInfo.hasInstallerUpdate && !isHigherThanLatest)
+      this.dom.appVersionElement.classList.toggle(
+        "success-text",
+        !versionInfo.hasInstallerUpdate && !isHigherThanLatest,
+      )
 
       if (isHigherThanLatest) {
-        // Handle case where local version is higher than latest (possibly unreleased/dev version)
-        this.appVersionElement.title = `Warning: Your version (v${appVersion}) is higher than the latest release (v${versionInfo.latestInstallerVersion})`;
-        this.appVersionElement.classList.remove(
-          "success-text",
-          "warning-text",
-          "updatable"
-        );
-        this.appVersionElement.classList.add("error-text", "version-badge");
+        this.dom.appVersionElement.title = `Warning: Your version (v${appVersion}) is higher than the latest release (v${versionInfo.latestInstallerVersion})`
       } else if (versionInfo.hasInstallerUpdate) {
-        // Normal update case
-        this.appVersionElement.title = `Latest version: v${versionInfo.latestInstallerVersion}`;
-        this.appVersionElement.classList.remove("success-text", "error-text");
-        this.appVersionElement.classList.add(
-          "warning-text",
-          "version-badge",
-          "updatable"
-        );
+        this.dom.appVersionElement.title = `Latest version: v${versionInfo.latestInstallerVersion}`
       } else {
-        // Up to date case
-        this.appVersionElement.title = `You have the latest version`;
-        this.appVersionElement.classList.remove(
-          "warning-text",
-          "updatable",
-          "error-text"
-        );
-        this.appVersionElement.classList.add("success-text", "version-badge");
+        this.dom.appVersionElement.title = `You have the latest version`
       }
     }
 
     if (versionInfo.spicetifyVersion) {
-      const verMatch = versionInfo.spicetifyVersion.match(/\d+\.\d+\.\d+/);
-      const cleanVersion = verMatch ? verMatch[0] : "Unknown version";
+      const verMatch = versionInfo.spicetifyVersion.match(/\d+\.\d+\.\d+/)
+      const cleanVersion = verMatch ? verMatch[0] : "Unknown version"
 
-      this.spicetifyVersionElement.classList.remove(
-        "success-text",
-        "warning-text",
-        "error-text"
-      );
+      this.dom.spicetifyVersionElement.className = ""
+      this.dom.spicetifyVersionElement.textContent = `Spicetify v${cleanVersion}`
 
       if (versionInfo.hasSpicetifyUpdate) {
-        this.spicetifyVersionElement.textContent = `Spicetify v${cleanVersion}`;
-        this.spicetifyVersionElement.classList.add(
-          "warning-text",
-          "version-badge",
-          "updatable"
-        );
-        this.spicetifyVersionElement.style.cursor = "pointer";
-        this.spicetifyVersionElement.title =
-          "Click to update to the latest version";
+        this.dom.spicetifyVersionElement.classList.add("warning-text", "version-badge", "updatable")
+        this.dom.spicetifyVersionElement.style.cursor = "pointer"
+        this.dom.spicetifyVersionElement.title = "Click to update to the latest version"
       } else {
-        this.spicetifyVersionElement.textContent = `Spicetify v${cleanVersion}`;
-        this.spicetifyVersionElement.classList.add(
-          "success-text",
-          "version-badge"
-        );
-        this.spicetifyVersionElement.style.cursor = "default";
-        this.spicetifyVersionElement.title = "";
+        this.dom.spicetifyVersionElement.classList.add("success-text", "version-badge")
+        this.dom.spicetifyVersionElement.style.cursor = "default"
+        this.dom.spicetifyVersionElement.title = ""
       }
     } else {
-      this.spicetifyVersionElement.textContent = "Spicetify not installed";
-      this.spicetifyVersionElement.classList.add("error-text", "version-badge");
-      this.spicetifyVersionElement.classList.remove(
-        "warning-text",
-        "success-text",
-        "updatable"
-      );
-      this.spicetifyVersionElement.style.cursor = "default";
-      this.spicetifyVersionElement.title = "";
+      this.dom.spicetifyVersionElement.className = ""
+      this.dom.spicetifyVersionElement.textContent = "Spicetify not installed"
+      this.dom.spicetifyVersionElement.classList.add("error-text", "version-badge")
+      this.dom.spicetifyVersionElement.style.cursor = "default"
+      this.dom.spicetifyVersionElement.title = ""
     }
 
-    // Check if current version is higher than latest version
     const isHigherThanLatest =
       versionInfo.latestInstallerVersion &&
-      this.isVersionHigherThanLatest(
-        appVersion,
-        versionInfo.latestInstallerVersion
-      );
+      this.isVersionHigherThanLatest(appVersion, versionInfo.latestInstallerVersion)
 
-    if (isHigherThanLatest) {
-      // Show warning for higher-than-latest version
-      this.updateNotificationElement.classList.remove("hidden");
-      this.updateNotificationElement.classList.add(
-        "update-notification-badge",
-        "error-notification"
-      );
-      this.updateNotificationElement.textContent =
-        "Warning: Unreleased Version";
-    } else if (
-      versionInfo.hasInstallerUpdate ||
-      versionInfo.hasSpicetifyUpdate
-    ) {
-      // Normal update notification
-      this.updateNotificationElement.classList.remove(
-        "hidden",
-        "error-notification"
-      );
-      this.updateNotificationElement.classList.add("update-notification-badge");
+    const hasUpdates = versionInfo.hasInstallerUpdate || versionInfo.hasSpicetifyUpdate
+    this.dom.updateNotificationElement.classList.toggle("hidden", !hasUpdates && !isHigherThanLatest)
+    this.dom.updateNotificationElement.className = this.dom.updateNotificationElement.className.replace(
+      /(?:^|\s)update-notification-badge(?!\S)/g,
+      "",
+    )
 
-      if (versionInfo.hasInstallerUpdate && versionInfo.hasSpicetifyUpdate) {
-        this.updateNotificationElement.textContent =
-          "Installer & Spicetify Updates Available!";
-      } else if (versionInfo.hasInstallerUpdate) {
-        this.updateNotificationElement.textContent = `Update Available: v${versionInfo.latestInstallerVersion}`;
-      } else {
-        this.updateNotificationElement.textContent =
-          "Spicetify Update Available!";
-      }
-    } else {
-      this.updateNotificationElement.classList.add("hidden");
-    }
-  }
-
-  // Add a helper method to compare versions
-  private isVersionHigherThanLatest(
-    currentVersion: string,
-    latestVersion: string
-  ): boolean {
-    // Remove 'v' prefix if present
-    const current = currentVersion.replace(/^v/, "");
-    const latest = latestVersion.replace(/^v/, "");
-
-    // Extract numeric parts for comparison
-    const currentParts = current.split(/[.-]/).map((part) => {
-      const num = Number.parseInt(part.replace(/[^\d]/g, ""));
-      return isNaN(num) ? 0 : num;
-    });
-
-    const latestParts = latest.split(/[.-]/).map((part) => {
-      const num = Number.parseInt(part.replace(/[^\d]/g, ""));
-      return isNaN(num) ? 0 : num;
-    });
-
-    // Compare each part
-    for (
-      let i = 0;
-      i < Math.max(currentParts.length, latestParts.length);
-      i++
-    ) {
-      const currentPart = currentParts[i] || 0;
-      const latestPart = latestParts[i] || 0;
-
-      if (currentPart > latestPart) {
-        return true;
-      } else if (currentPart < latestPart) {
-        return false;
-      }
-    }
-
-    // If we get here, versions are equal
-    return false;
-  }
-
-  // Update the handleUpdateClick method to handle the higher-than-latest case
-  private async handleUpdateClick(): Promise<void> {
-    try {
-      const versionInfo = await invoke<VersionInfo>("check_versions");
-
-      // Check if current version is higher than latest
-      const isHigherThanLatest =
-        versionInfo.latestInstallerVersion &&
-        this.isVersionHigherThanLatest(
-          versionInfo.installerVersion,
-          versionInfo.latestInstallerVersion
-        );
+    if (isHigherThanLatest || hasUpdates) {
+      this.dom.updateNotificationElement.classList.add("update-notification-badge")
 
       if (isHigherThanLatest) {
-        this.showVersionWarningModal(
-          versionInfo.installerVersion,
-          versionInfo.latestInstallerVersion || ""
-        );
+        this.dom.updateNotificationElement.textContent = "Warning: Unreleased Version"
+      } else if (versionInfo.hasInstallerUpdate && versionInfo.hasSpicetifyUpdate) {
+        this.dom.updateNotificationElement.textContent = "Installer & Spicetify Updates Available!"
       } else if (versionInfo.hasInstallerUpdate) {
-        this.showUpdateModal(
-          "installer",
-          versionInfo.latestInstallerVersion || "v1.0.2-Alpha"
-        );
-      } else if (versionInfo.hasSpicetifyUpdate) {
-        this.showUpdateModal("spicetify", "");
+        this.dom.updateNotificationElement.textContent = `Update Available: v${versionInfo.latestInstallerVersion}`
+      } else {
+        this.dom.updateNotificationElement.textContent = "Spicetify Update Available!"
       }
-    } catch (error) {
-      console.error("Error handling update:", error);
-      this.appendOutput(`Error checking for updates: ${error}\n`);
     }
   }
 
-  // Add a new method to show the version warning modal
-  private showVersionWarningModal(
-    currentVersion: string,
-    latestVersion: string
-  ): void {
+  private async handleUpdateClick(): Promise<void> {
+    try {
+      const versionInfo = await invoke<VersionInfo>("check_versions")
+
+      const isHigherThanLatest =
+        versionInfo.latestInstallerVersion &&
+        this.isVersionHigherThanLatest(versionInfo.installerVersion, versionInfo.latestInstallerVersion)
+
+      if (isHigherThanLatest) {
+        this.showVersionWarningModal(versionInfo.installerVersion, versionInfo.latestInstallerVersion || "")
+      } else if (versionInfo.hasInstallerUpdate) {
+        this.showUpdateModal("installer", versionInfo.latestInstallerVersion || "v1.0.2-Alpha")
+      } else if (versionInfo.hasSpicetifyUpdate) {
+        this.showUpdateModal("spicetify", "")
+      }
+    } catch (error) {
+      console.error("Error handling update:", error)
+      this.appendOutput(`Error checking for updates: ${error}\n`)
+    }
+  }
+
+  private showVersionWarningModal(currentVersion: string, latestVersion: string): void {
+    document.body.classList.add("modal-open")
     if (!this.updateModal) {
-      this.createUpdateModal();
+      this.createUpdateModal()
     }
 
-    const title = document.getElementById("update-modal-title")!;
-    const message = document.getElementById("update-modal-message")!;
-    const downloadBtn = document.getElementById("update-download-btn")!;
+    const title = document.getElementById("update-modal-title")!
+    const message = document.getElementById("update-modal-message")!
+    const downloadBtn = document.getElementById("update-download-btn")!
 
-    title.textContent = "Warning: Unreleased Version";
-    title.style.color = "#e22134"; // Error color
+    title.textContent = "Warning: Unreleased Version"
+    title.style.color = "#e22134"
 
     message.innerHTML = `
     <div class="update-info-container">
@@ -763,33 +763,33 @@ class SpicetifyInstallerApp {
           Your version appears to be newer than the latest official release. This could be a development build or an unreleased version. Consider installing the latest stable release for better compatibility and support.
         </p>
       </div>
-    </div>
-  `;
+    </div>`
 
     downloadBtn.innerHTML = `
     <span class="material-icons">get_app</span>
-    Install Latest Stable Release
-  `;
+    Install Latest Stable Release`
 
-    this.updateModal!.classList.remove("hidden");
-    setTimeout(() => {
-      this.updateModal!.classList.add("visible");
-    }, 10);
+    this.updateModal!.classList.remove("hidden")
+    requestAnimationFrame(() => {
+      this.updateModal!.classList.add("visible")
+    })
   }
 
   private async handleSpicetifyVersionClick(): Promise<void> {
     try {
-      const versionInfo = await invoke<VersionInfo>("check_versions");
+      const versionInfo = await invoke<VersionInfo>("check_versions")
 
       if (versionInfo.hasSpicetifyUpdate) {
-        this.showUpdateModal("spicetify", "");
+        this.showUpdateModal("spicetify", "")
       }
     } catch (error) {
-      console.error("Error handling Spicetify version click:", error);
+      console.error("Error handling Spicetify version click:", error)
     }
   }
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  new SpicetifyInstallerApp();
-});
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => new SpicetifyInstallerApp())
+} else {
+  new SpicetifyInstallerApp()
+}
