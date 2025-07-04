@@ -76,6 +76,156 @@ class LoadingManager {
   }
 }
 
+class AnsiParser {
+  private static readonly ANSI_COLORS = {
+    // Standard colors
+    30: "#000000", // black
+    31: "#cd0000", // red
+    32: "#00cd00", // green
+    33: "#cdcd00", // yellow
+    34: "#0000ee", // blue
+    35: "#cd00cd", // magenta
+    36: "#00cdcd", // cyan
+    37: "#e5e5e5", // white
+    // Bright colors
+    90: "#7f7f7f", // bright black (gray)
+    91: "#ff0000", // bright red
+    92: "#00ff00", // bright green
+    93: "#ffff00", // bright yellow
+    94: "#5c5cff", // bright blue
+    95: "#ff00ff", // bright magenta
+    96: "#00ffff", // bright cyan
+    97: "#ffffff", // bright white
+    // Background colors
+    40: "#000000", // black bg
+    41: "#cd0000", // red bg
+    42: "#00cd00", // green bg
+    43: "#cdcd00", // yellow bg
+    44: "#0000ee", // blue bg
+    45: "#cd00cd", // magenta bg
+    46: "#00cdcd", // cyan bg
+    47: "#e5e5e5", // white bg
+    // Bright background colors
+    100: "#7f7f7f", // bright black bg
+    101: "#ff0000", // bright red bg
+    102: "#00ff00", // bright green bg
+    103: "#ffff00", // bright yellow bg
+    104: "#5c5cff", // bright blue bg
+    105: "#ff00ff", // bright magenta bg
+    106: "#00ffff", // bright cyan bg
+    107: "#ffffff", // bright white bg
+  }
+
+  static parseAnsiToHtml(text: string): string {
+    console.log("Original text:", text.substring(0, 200) + "...")
+
+    // Handle both full ANSI escape sequences (\x1b[...m) and bracket-only format ([...m)
+    const result = text
+      // First handle full ANSI escape sequences
+      .replace(/\x1b\[([0-9;]*)m/g, (match, codes) => {
+        return this.processAnsiCodes(codes)
+      })
+      // Then handle bracket-only format (like [33m, [0m)
+      .replace(/\[([0-9;]*)m/g, (match, codes) => {
+        return this.processAnsiCodes(codes)
+      })
+
+    console.log("Processed text:", result.substring(0, 200) + "...")
+    return result
+  }
+
+  private static processAnsiCodes(codes: string): string {
+    if (!codes) return "</span>"
+
+    const codeList = codes.split(";").map((code: string) => {
+      const num = Number.parseInt(code, 10)
+      return isNaN(num) ? 0 : num
+    })
+
+    const styles: string[] = []
+    let hasStyles = false
+
+    for (let i = 0; i < codeList.length; i++) {
+      const code = codeList[i]
+
+      if (code === 0) {
+        // Reset - close any open spans
+        return "</span>"
+      } else if (code === 1) {
+        // Bold
+        styles.push("font-weight: bold")
+        hasStyles = true
+      } else if (code === 2) {
+        // Dim
+        styles.push("opacity: 0.7")
+        hasStyles = true
+      } else if (code === 3) {
+        // Italic
+        styles.push("font-style: italic")
+        hasStyles = true
+      } else if (code === 4) {
+        // Underline
+        styles.push("text-decoration: underline")
+        hasStyles = true
+      } else if ((code >= 30 && code <= 37) || (code >= 90 && code <= 97)) {
+        // Foreground colors
+        const color = this.ANSI_COLORS[code as keyof typeof this.ANSI_COLORS]
+        if (color) {
+          styles.push(`color: ${color}`)
+          hasStyles = true
+        }
+      } else if ((code >= 40 && code <= 47) || (code >= 100 && code <= 107)) {
+        // Background colors
+        const color = this.ANSI_COLORS[code as keyof typeof this.ANSI_COLORS]
+        if (color) {
+          styles.push(`background-color: ${color}`)
+          hasStyles = true
+        }
+      } else if (code === 38 && i + 1 < codeList.length) {
+        // Extended foreground color
+        if (codeList[i + 1] === 2 && i + 4 < codeList.length) {
+          // RGB color: 38;2;r;g;b
+          const r = codeList[i + 2]
+          const g = codeList[i + 3]
+          const b = codeList[i + 4]
+          styles.push(`color: rgb(${r}, ${g}, ${b})`)
+          hasStyles = true
+          i += 4 // Skip the processed codes
+        }
+      }
+    }
+
+    if (hasStyles && styles.length > 0) {
+      return `<span style="${styles.join("; ")}">`
+    }
+
+    return ""
+  }
+
+  static cleanAnsiText(text: string): string {
+    // First convert ANSI to HTML
+    let cleaned = this.parseAnsiToHtml(text)
+
+    // Remove any remaining unprocessed ANSI escape sequences
+    cleaned = cleaned
+      .replace(/\x1b\[[0-9;]*m/g, "") // Full escape sequences
+      .replace(/\[[0-9;]*m/g, "") // Bracket-only sequences
+
+    // Ensure we close any unclosed spans
+    const openSpans = (cleaned.match(/<span[^>]*>/g) || []).length
+    const closeSpans = (cleaned.match(/<\/span>/g) || []).length
+
+    if (openSpans > closeSpans) {
+      cleaned += "</span>".repeat(openSpans - closeSpans)
+    }
+
+    // Clean up any double closing spans
+    cleaned = cleaned.replace(/<\/span><\/span>/g, "</span>")
+
+    return cleaned
+  }
+}
+
 class SpicetifyInstallerApp {
   private dom = {
     commandDisplay: document.getElementById("command-display")!,
@@ -416,7 +566,13 @@ class SpicetifyInstallerApp {
   }
 
   private appendOutput(text: string): void {
-    this.outputBuffer += text
+    console.log("Raw output text:", text.substring(0, 100))
+
+    // Parse ANSI color codes to HTML
+    const coloredText = AnsiParser.cleanAnsiText(text)
+    console.log("Colored text:", coloredText.substring(0, 100))
+
+    this.outputBuffer += coloredText
 
     if (!this.outputUpdateScheduled) {
       this.outputUpdateScheduled = true

@@ -124,9 +124,9 @@ async fn execute_with_progress(command: String, app_handle: AppHandle) -> Result
 $ErrorActionPreference = 'Stop'
 try {{
     {}
-    Write-Output "Command executed successfully."
+    Write-Host "Command executed successfully."
 }} catch {{
-    Write-Output "Error: $_"
+    Write-Host "Error: $_"
     exit 1
 }}
 "#,
@@ -189,31 +189,31 @@ async fn execute_uninstall_command(app_handle: AppHandle) -> Result<String, Stri
 
     let script_content = r#"
 $ErrorActionPreference = 'Continue'
-Write-Output "Step 1: Restoring Spotify to original state..."
+Write-Host "Step 1: Restoring Spotify to original state..."
 try {
     spicetify restore
-    Write-Output "Spotify has been restored to its original state."
+    Write-Host "Spotify has been restored to its original state."
 } catch {
-    Write-Output "Warning: $($_.Exception.Message)"
+    Write-Host "Warning: $($_.Exception.Message)"
 }
 
-Write-Output "`nStep 2: Removing Spicetify from AppData folder..."
+Write-Host "`nStep 2: Removing Spicetify from AppData folder..."
 if (Test-Path "$env:APPDATA\spicetify") {
     Remove-Item -Path "$env:APPDATA\spicetify" -Recurse -Force -ErrorAction SilentlyContinue
-    Write-Output "Removed Spicetify from AppData folder."
+    Write-Host "Removed Spicetify from AppData folder."
 } else {
-    Write-Output "AppData\spicetify folder not found."
+    Write-Host "AppData\spicetify folder not found."
 }
 
-Write-Output "`nStep 3: Removing Spicetify from LocalAppData folder..."
+Write-Host "`nStep 3: Removing Spicetify from LocalAppData folder..."
 if (Test-Path "$env:LOCALAPPDATA\spicetify") {
     Remove-Item -Path "$env:LOCALAPPDATA\spicetify" -Recurse -Force -ErrorAction SilentlyContinue
-    Write-Output "Removed Spicetify from LocalAppData folder."
+    Write-Host "Removed Spicetify from LocalAppData folder."
 } else {
-    Write-Output "LocalAppData\spicetify folder not found."
+    Write-Host "LocalAppData\spicetify folder not found."
 }
 
-Write-Output "`nSpicetify has been completely uninstalled from your system."
+Write-Host "`nSpicetify has been completely uninstalled from your system."
 "#;
 
     fs::write(&script_path, script_content)
@@ -263,34 +263,34 @@ async fn execute_repair_command(app_handle: AppHandle) -> Result<String, String>
 
     let script_content = r#"
 $ErrorActionPreference = 'Stop'
-Write-Output "Step 1: Restoring Spotify to original state..."
+Write-Host "Step 1: Restoring Spotify to original state..."
 try {
     spicetify restore
-    Write-Output "Spotify has been restored to its original state."
+    Write-Host "Spotify has been restored to its original state."
 } catch {
-    Write-Output "Error: $($_.Exception.Message)"
+    Write-Host "Error: $($_.Exception.Message)"
     exit 1
 }
 
-Write-Output "`nStep 2: Creating a new backup..."
+Write-Host "`nStep 2: Creating a new backup..."
 try {
     spicetify backup
-    Write-Output "Backup created successfully."
+    Write-Host "Backup created successfully."
 } catch {
-    Write-Output "Error: $($_.Exception.Message)"
+    Write-Host "Error: $($_.Exception.Message)"
     exit 1
 }
 
-Write-Output "`nStep 3: Applying Spicetify customizations..."
+Write-Host "`nStep 3: Applying Spicetify customizations..."
 try {
     spicetify apply
-    Write-Output "Spicetify applied successfully."
+    Write-Host "Spicetify applied successfully."
 } catch {
-    Write-Output "Error: $($_.Exception.Message)"
+    Write-Host "Error: $($_.Exception.Message)"
     exit 1
 }
 
-Write-Output "`nRepair process completed successfully!"
+Write-Host "`nRepair process completed successfully!"
 "#;
 
     fs::write(&script_path, script_content)
@@ -344,16 +344,16 @@ async fn execute_backup_command(app_handle: AppHandle) -> Result<String, String>
 
     let script_content = r#"
 $ErrorActionPreference = 'Stop'
-Write-Output "Creating backup of Spotify installation..."
+Write-Host "Creating backup of Spotify installation..."
 try {
     spicetify backup
-    Write-Output "Backup created successfully."
+    Write-Host "Backup created successfully."
 } catch {
-    Write-Output "Error: $($_.Exception.Message)"
+    Write-Host "Error: $($_.Exception.Message)"
     exit 1
 }
 
-Write-Output "`nBackup process completed successfully!"
+Write-Host "`nBackup process completed successfully!"
 "#;
 
     fs::write(&script_path, script_content)
