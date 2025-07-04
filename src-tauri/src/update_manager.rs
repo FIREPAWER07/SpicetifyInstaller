@@ -110,21 +110,42 @@ impl UpdateManager {
                 error
             })?;
 
-        // Create temporary updater script
-        let temp_dir = env::temp_dir();
-        let updater_script_path = temp_dir.join("spicetify_installer_updater.ps1");
-        let new_installer_path = temp_dir.join("spicetify_installer_new.exe");
+        // Extract the actual filename from GitHub URL
+        let github_filename = download_url
+            .split('/')
+            .last()
+            .ok_or("Could not extract filename from URL")?
+            .split('?')
+            .next()
+            .unwrap_or("installer.exe");
 
-        println!("Temp directory: {:?}", temp_dir);
+        println!("GitHub filename: {}", github_filename);
+
+        // Create temporary directory for update files
+        let temp_dir = env::temp_dir();
+        let update_dir = temp_dir.join("spicetify_installer_update");
+        
+        // Create update directory if it doesn't exist
+        if !update_dir.exists() {
+            fs::create_dir_all(&update_dir)
+                .map_err(|e| format!("Failed to create update directory: {}", e))?;
+        }
+
+        let updater_script_path = update_dir.join("updater.ps1");
+        let new_installer_path = update_dir.join(github_filename);
+        let final_installer_path = current_exe_dir.join(github_filename);
+        
+        println!("Update directory: {:?}", update_dir);
         println!("Script path: {:?}", updater_script_path);
         println!("New installer path: {:?}", new_installer_path);
+        println!("Final installer path: {:?}", final_installer_path);
 
         self.emit_progress("Downloading", 10, "Downloading new installer...").await;
 
         // Download the new installer
         let client = reqwest::Client::builder()
             .user_agent("Spicetify-Installer-Updater")
-            .timeout(Duration::from_secs(300)) // 5 minute timeout
+            .timeout(Duration::from_secs(300))
             .build()
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
@@ -154,11 +175,6 @@ impl UpdateManager {
 
         println!("Downloaded {} bytes", content.len());
 
-        if content.len() < 1024 * 1024 { // Less than 1MB seems suspicious
-            let error = format!("Downloaded file seems too small: {} bytes", content.len());
-            println!("Warning: {}", error);
-        }
-
         fs::write(&new_installer_path, content)
             .map_err(|e| {
                 let error = format!("Failed to write installer: {}", e);
@@ -174,6 +190,7 @@ impl UpdateManager {
         let updater_script = self.create_updater_script(
             &current_exe,
             &new_installer_path,
+            &final_installer_path,
             current_exe_dir,
         )?;
 
@@ -184,17 +201,26 @@ impl UpdateManager {
                 error
             })?;
 
-        println!("Updater script created");
+        // Create a simple batch file to run the PowerShell script
+        let batch_script = format!(r#"@echo off
+cd /d "{}"
+powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File "{}"
+"#, 
+            update_dir.to_string_lossy(),
+            updater_script_path.to_string_lossy()
+        );
+
+        let batch_path = update_dir.join("run_updater.bat");
+        fs::write(&batch_path, batch_script)
+            .map_err(|e| format!("Failed to write batch script: {}", e))?;
+
+        println!("Updater script and batch file created");
 
         self.emit_progress("Executing update", 50, "Starting update process...").await;
 
-        // Execute the updater script
-        let mut cmd = Command::new("powershell");
-        cmd.args(&[
-            "-ExecutionPolicy", "Bypass",
-            "-WindowStyle", "Hidden",
-            "-File", &updater_script_path.to_string_lossy()
-        ]);
+        // Execute the batch file which will run the PowerShell script
+        let mut cmd = Command::new("cmd");
+        cmd.args(&["/c", &batch_path.to_string_lossy()]);
 
         #[cfg(windows)]
         {
@@ -202,7 +228,7 @@ impl UpdateManager {
             cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
         }
 
-        println!("Executing updater script...");
+        println!("Executing updater batch file...");
 
         cmd.spawn()
             .map_err(|e| {
@@ -215,8 +241,8 @@ impl UpdateManager {
 
         println!("Updater started, waiting before exit...");
 
-        // Give the updater a moment to start
-        tokio::time::sleep(Duration::from_millis(2000)).await;
+        // Give the updater more time to start
+        tokio::time::sleep(Duration::from_millis(3000)).await;
 
         println!("Exiting application for update...");
 
@@ -230,38 +256,42 @@ impl UpdateManager {
         &self,
         current_exe: &PathBuf,
         new_installer: &PathBuf,
+        final_installer: &PathBuf,
         install_dir: &std::path::Path,
     ) -> Result<String, String> {
-        let script = format!(r#"
+    let script = format!(r#"
 # Spicetify Installer Auto-Updater Script
-# This script will replace the current installer with the new version
+# Downloads latest version and installs with GitHub filename
 
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 
 # Configuration
 $CurrentInstaller = "{}"
 $NewInstaller = "{}"
+$FinalInstaller = "{}"
 $InstallDirectory = "{}"
-$BackupPath = "$env:TEMP\spicetify_installer_backup.exe"
-$LogFile = "$env:TEMP\spicetify_updater.log"
+$BackupPath = "$env:TEMP\spicetify_installer_backup_$(Get-Date -Format 'yyyyMMdd_HHmmss').exe"
+$LogFile = "$env:TEMP\spicetify_updater_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
 
 # Logging function
 function Write-Log {{
     param($Message)
     $Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    "$Timestamp - $Message" | Out-File -FilePath $LogFile -Append
-    Write-Host $Message
+    $LogEntry = "$Timestamp - $Message"
+    $LogEntry | Out-File -FilePath $LogFile -Append -Encoding UTF8
+    Write-Host $LogEntry
 }}
 
 try {{
-    Write-Log "Starting Spicetify Installer update process..."
+    Write-Log "=== Starting Update Process ==="
     Write-Log "Current installer: $CurrentInstaller"
     Write-Log "New installer: $NewInstaller"
+    Write-Log "Final installer: $FinalInstaller"
     Write-Log "Install directory: $InstallDirectory"
 
-    # Wait for the current application to close
-    Write-Log "Waiting for current application to close..."
+    # Wait for current application to close
+    Write-Log "Waiting for application to close..."
     $ProcessName = [System.IO.Path]::GetFileNameWithoutExtension($CurrentInstaller)
     
     $WaitCount = 0
@@ -271,118 +301,120 @@ try {{
     }}
 
     if ($WaitCount -ge 30) {{
-        Write-Log "Warning: Application may still be running. Proceeding anyway..."
+        Write-Log "Forcing application closure..."
+        Get-Process -Name $ProcessName -ErrorAction SilentlyContinue | Stop-Process -Force
+        Start-Sleep -Seconds 2
     }}
 
-    # Additional wait to ensure file handles are released
-    Start-Sleep -Seconds 2
-
-    # Verify new installer exists and is valid
+    # Verify new installer exists
     if (-not (Test-Path $NewInstaller)) {{
-        throw "New installer not found at: $NewInstaller"
+        throw "New installer not found: $NewInstaller"
     }}
 
-    $NewInstallerSize = (Get-Item $NewInstaller).Length
-    if ($NewInstallerSize -lt 1MB) {{
-        throw "New installer appears to be invalid (size: $NewInstallerSize bytes)"
-    }}
-
-    Write-Log "New installer verified (size: $NewInstallerSize bytes)"
+    $NewSize = (Get-Item $NewInstaller).Length
+    Write-Log "New installer size: $NewSize bytes"
 
     # Create backup of current installer
     if (Test-Path $CurrentInstaller) {{
         Write-Log "Creating backup of current installer..."
         Copy-Item -Path $CurrentInstaller -Destination $BackupPath -Force
-        Write-Log "Backup created at: $BackupPath"
+        Write-Log "Backup created: $BackupPath"
     }}
 
-    # Replace the current installer
-    Write-Log "Replacing current installer..."
-    
-    # Try multiple times in case of file locking issues
-    $ReplaceAttempts = 0
-    $ReplaceSuccess = $false
-    
-    while ((-not $ReplaceSuccess) -and ($ReplaceAttempts -lt 5)) {{
-        try {{
-            Copy-Item -Path $NewInstaller -Destination $CurrentInstaller -Force
-            $ReplaceSuccess = $true
-            Write-Log "Installer replaced successfully"
+    # Install new version with GitHub filename
+    Write-Log "Installing new version with GitHub filename..."
+    Copy-Item -Path $NewInstaller -Destination $FinalInstaller -Force
+
+    # Verify installation
+    if (Test-Path $FinalInstaller) {{
+        $FinalSize = (Get-Item $FinalInstaller).Length
+        if ($FinalSize -eq $NewSize) {{
+            Write-Log "New version installed successfully! Size: $FinalSize bytes"
+        }} else {{
+            throw "Size mismatch after installation"
         }}
-        catch {{
-            $ReplaceAttempts++
-            Write-Log "Replace attempt $ReplaceAttempts failed: $($_.Exception.Message)"
-            if ($ReplaceAttempts -lt 5) {{
-                Start-Sleep -Seconds 2
-            }}
+    }} else {{
+        throw "New installer not found after installation"
+    }}
+
+    # Remove old version if it's different from new one
+    if ((Test-Path $CurrentInstaller) -and ($CurrentInstaller -ne $FinalInstaller)) {{
+        Write-Log "Removing old version: $CurrentInstaller"
+        Remove-Item -Path $CurrentInstaller -Force -ErrorAction SilentlyContinue
+        Write-Log "Old version removed"
+    }}
+
+    # Clean up temporary file
+    Remove-Item -Path $NewInstaller -Force -ErrorAction SilentlyContinue
+
+    # Start new version BEFORE cleanup
+    Write-Log "Starting new version: $FinalInstaller"
+    $NewProcess = Start-Process -FilePath $FinalInstaller -WorkingDirectory $InstallDirectory -PassThru
+    
+    if ($NewProcess) {{
+        Write-Log "New version started successfully (PID: $($NewProcess.Id))"
+        
+        # Wait a moment to ensure the new process is stable
+        Start-Sleep -Seconds 2
+        
+        # Verify the new process is still running
+        if (Get-Process -Id $NewProcess.Id -ErrorAction SilentlyContinue) {{
+            Write-Log "New version is running successfully"
+        }} else {{
+            Write-Log "Warning: New version process may have exited"
         }}
+    }} else {{
+        Write-Log "Warning: Failed to get process information for new version"
     }}
 
-    if (-not $ReplaceSuccess) {{
-        throw "Failed to replace installer after 5 attempts"
-    }}
-
-    # Verify the replacement was successful
-    if (-not (Test-Path $CurrentInstaller)) {{
-        throw "Installer replacement failed - file not found"
-    }}
-
-    $ReplacedSize = (Get-Item $CurrentInstaller).Length
-    if ($ReplacedSize -ne $NewInstallerSize) {{
-        Write-Log "Warning: Size mismatch after replacement (expected: $NewInstallerSize, actual: $ReplacedSize)"
-    }}
-
-    # Clean up temporary files
-    Write-Log "Cleaning up temporary files..."
-    if (Test-Path $NewInstaller) {{
-        Remove-Item -Path $NewInstaller -Force -ErrorAction SilentlyContinue
-    }}
-
-    # Start the updated installer
-    Write-Log "Starting updated installer..."
-    Start-Process -FilePath $CurrentInstaller -WorkingDirectory $InstallDirectory
-
-    Write-Log "Update completed successfully!"
-
-    # Clean up this script after a delay
-    Start-Sleep -Seconds 3
-    Remove-Item -Path $PSCommandPath -Force -ErrorAction SilentlyContinue
+    Write-Log "=== Update completed successfully! ==="
+    Write-Log "New version is now running with GitHub filename"
 
 }}
 catch {{
-    Write-Log "ERROR: $($_.Exception.Message)"
+    Write-Log "=== Update failed: $($_.Exception.Message) ==="
     
-    # Attempt to restore backup if replacement failed
-    if ((Test-Path $BackupPath) -and (-not (Test-Path $CurrentInstaller))) {{
-        Write-Log "Attempting to restore backup..."
-        try {{
-            Copy-Item -Path $BackupPath -Destination $CurrentInstaller -Force
-            Write-Log "Backup restored successfully"
-        }}
-        catch {{
-            Write-Log "Failed to restore backup: $($_.Exception.Message)"
-        }}
+    # Restore backup if available and new version failed
+    if ((Test-Path $BackupPath) -and (-not (Test-Path $FinalInstaller) -or (Get-Item $FinalInstaller).Length -eq 0)) {{
+        Write-Log "Restoring backup..."
+        Copy-Item -Path $BackupPath -Destination $CurrentInstaller -Force
+        Write-Log "Backup restored"
+        
+        # Start the restored version
+        Write-Log "Starting restored version..."
+        Start-Process -FilePath $CurrentInstaller -WorkingDirectory $InstallDirectory
     }}
-    
-    # Show error message to user
-    Add-Type -AssemblyName System.Windows.Forms
-    [System.Windows.Forms.MessageBox]::Show(
-        "Update failed: $($_.Exception.Message)`n`nPlease check the log file at: $LogFile`n`nYou may need to manually download the update.",
-        "Spicetify Installer Update Error",
-        [System.Windows.Forms.MessageBoxButtons]::OK,
-        [System.Windows.Forms.MessageBoxIcon]::Error
-    )
     
     exit 1
 }}
-"#,
-            current_exe.to_string_lossy().replace('\\', "\\\\"),
-            new_installer.to_string_lossy().replace('\\', "\\\\"),
-            install_dir.to_string_lossy().replace('\\', "\\\\")
-        );
 
-        Ok(script)
-    }
+# Clean up AFTER starting the new version
+Write-Log "Cleaning up update files..."
+Start-Sleep -Seconds 3
+
+# Clean up the update directory
+try {{
+    $UpdateDir = Split-Path -Parent $PSCommandPath
+    Write-Log "Removing update directory: $UpdateDir"
+    Start-Sleep -Seconds 1
+    Remove-Item -Path $UpdateDir -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Log "Update directory cleaned up"
+}}
+catch {{
+    Write-Log "Note: Update directory cleanup failed, but this is not critical"
+}}
+
+Write-Log "Update script completed successfully"
+exit 0
+"#,
+        current_exe.to_string_lossy().replace('\\', "\\\\"),
+        new_installer.to_string_lossy().replace('\\', "\\\\"),
+        final_installer.to_string_lossy().replace('\\', "\\\\"),
+        install_dir.to_string_lossy().replace('\\', "\\\\")
+    );
+
+    Ok(script)
+}
 
     async fn emit_progress(&self, stage: &str, progress: u32, message: &str) {
         let update_progress = UpdateProgress {
@@ -395,7 +427,6 @@ catch {{
     }
 
     fn is_version_newer(&self, latest: &str, current: &str) -> bool {
-        // Simple version comparison - you might want to use a proper semver library
         let latest_parts: Vec<u32> = latest.split('.')
             .filter_map(|s| s.parse().ok())
             .collect();
