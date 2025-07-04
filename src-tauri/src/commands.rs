@@ -6,6 +6,7 @@ use std::os::windows::process::CommandExt;
 use std::process::Command;
 use tauri::{AppHandle, Emitter};
 use tokio::time::Duration;
+use crate::update_manager::{UpdateManager, UpdateInfo};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VersionInfo {
@@ -26,17 +27,14 @@ pub struct VersionInfo {
 use std::sync::atomic::{AtomicBool, Ordering};
 static CHECKING_UPDATES: AtomicBool = AtomicBool::new(false);
 
-// Replace the check_github_release function with this implementation that actually fetches from GitHub
 async fn check_github_release() -> Result<(String, String), String> {
     println!("Checking for latest release on GitHub...");
 
-    // Create a client with appropriate headers for GitHub API
     let client = reqwest::Client::builder()
         .user_agent("Spicetify-Installer")
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
-    // Fetch the latest release information from GitHub API
     let response = client
         .get("https://api.github.com/repos/FIREPAWER07/SpicetifyInstaller/releases/latest")
         .send()
@@ -55,13 +53,11 @@ async fn check_github_release() -> Result<(String, String), String> {
         .await
         .map_err(|e| format!("Failed to parse GitHub response: {}", e))?;
 
-    // Extract the tag name (version) and download URL
     let tag_name = release_info["tag_name"]
         .as_str()
         .ok_or("Missing tag_name in GitHub response")?
         .to_string();
 
-    // Find the Windows asset URL
     let assets = release_info["assets"]
         .as_array()
         .ok_or("Missing assets in GitHub response")?;
@@ -78,7 +74,6 @@ async fn check_github_release() -> Result<(String, String), String> {
         }
     }
 
-    // If no specific asset was found, use the general release URL
     if download_url.is_empty() {
         download_url = release_info["html_url"]
             .as_str()
@@ -104,7 +99,6 @@ pub async fn execute_powershell_command(
         return install_spicetify_direct(app_handle).await;
     }
 
-    // Check for specific commands and route them to specialized handlers
     if command.contains("spicetify restore") && command.contains("Remove-Item") {
         return execute_uninstall_command(app_handle).await;
     } else if command == "spicetify restore backup apply" {
@@ -122,7 +116,6 @@ async fn execute_with_progress(command: String, app_handle: AppHandle) -> Result
 
     app_handle.emit("progress_update", 0).unwrap();
 
-    // Create a PowerShell script file for better command execution
     let temp_dir = env::temp_dir();
     let script_path = temp_dir.join("spicetify_command.ps1");
 
@@ -188,11 +181,9 @@ try {{
     }
 }
 
-// Specialized function for uninstall command
 async fn execute_uninstall_command(app_handle: AppHandle) -> Result<String, String> {
     app_handle.emit("progress_update", 10).unwrap();
 
-    // Create a PowerShell script for uninstallation
     let temp_dir = env::temp_dir();
     let script_path = temp_dir.join("spicetify_uninstall.ps1");
 
@@ -264,11 +255,9 @@ Write-Output "`nSpicetify has been completely uninstalled from your system."
     Ok(stdout)
 }
 
-// Specialized function for repair command
 async fn execute_repair_command(app_handle: AppHandle) -> Result<String, String> {
     app_handle.emit("progress_update", 10).unwrap();
 
-    // Create a PowerShell script for repair
     let temp_dir = env::temp_dir();
     let script_path = temp_dir.join("spicetify_repair.ps1");
 
@@ -347,11 +336,9 @@ Write-Output "`nRepair process completed successfully!"
     }
 }
 
-// Specialized function for backup command
 async fn execute_backup_command(app_handle: AppHandle) -> Result<String, String> {
     app_handle.emit("progress_update", 10).unwrap();
 
-    // Create a PowerShell script for backup
     let temp_dir = env::temp_dir();
     let script_path = temp_dir.join("spicetify_backup.ps1");
 
@@ -412,12 +399,10 @@ Write-Output "`nBackup process completed successfully!"
     }
 }
 
-// Replace the install_spicetify_direct function with this improved version
 async fn install_spicetify_direct(app_handle: AppHandle) -> Result<String, String> {
     let temp_dir = env::temp_dir();
     let install_script_path = temp_dir.join("spicetify_direct_install.ps1");
 
-    // Create an improved installation script with better PATH handling and verification
     let install_script = r#"
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -451,17 +436,13 @@ function Add-SpicetifyToPath {
   $user = [EnvironmentVariableTarget]::User
   $path = [Environment]::GetEnvironmentVariable('PATH', $user)
   
-  # First remove any old paths
   $path = $path -replace "$([regex]::Escape($spicetifyOldFolderPath))\\*;*", ''
   
-  # Then add the new path if it's not already there
   if ($path -notlike "*$spicetifyFolderPath*") {
     $path = "$path;$spicetifyFolderPath"
     
-    # Update the path for future sessions
     [Environment]::SetEnvironmentVariable('PATH', $path, $user)
     
-    # Also update the path for the current session
     $env:PATH = $path
     
     Write-Success "Path updated successfully"
@@ -469,7 +450,6 @@ function Add-SpicetifyToPath {
     Write-Success "Path already contains Spicetify"
   }
   
-  # Verify the path update
   Write-Host "Verifying PATH update..." -NoNewline
   $updatedPath = [Environment]::GetEnvironmentVariable('PATH', $user)
   if ($updatedPath -like "*$spicetifyFolderPath*") {
@@ -501,7 +481,7 @@ function Get-Spicetify {
   catch {
     Write-Unsuccess
     Write-Host "Failed to fetch latest version: $_" -ForegroundColor Red
-    $targetVersion = "2.16.2" # Fallback to a known good version
+    $targetVersion = "2.16.2"
     Write-Host "Using fallback version $targetVersion" -ForegroundColor Yellow
   }
   
@@ -528,7 +508,6 @@ function Get-Spicetify {
 function Install-Spicetify {
   Write-Host "Installing Spicetify..." -ForegroundColor Cyan
   
-  # Create the directory if it doesn't exist
   if (!(Test-Path -Path $spicetifyFolderPath)) {
     Write-Host "Creating Spicetify directory..." -NoNewline
     New-Item -Path $spicetifyFolderPath -ItemType Directory -Force | Out-Null
@@ -542,13 +521,10 @@ function Install-Spicetify {
     Expand-Archive -Path $archivePath -DestinationPath $spicetifyFolderPath -Force
     Write-Success
     
-    # Add to PATH
     Add-SpicetifyToPath
     
-    # Clean up
     Remove-Item -Path $archivePath -Force -ErrorAction 'SilentlyContinue'
     
-    # Verify installation
     Write-Host "Verifying Spicetify installation..." -NoNewline
     if (Test-Path -Path "$spicetifyFolderPath\spicetify.exe") {
       Write-Success "spicetify.exe found"
@@ -561,7 +537,6 @@ function Install-Spicetify {
     
     Write-Host "Spicetify was successfully installed!" -ForegroundColor Green
     
-    # Return the installation path for diagnostics
     return $spicetifyFolderPath
   }
   catch {
@@ -579,14 +554,11 @@ function Install-SpicetifyMarketplace {
     }
     $marketplaceScript = (Invoke-WebRequest @Parameters).Content
     
-    # Execute the marketplace script
     $tempScriptPath = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "marketplace-install.ps1")
     Set-Content -Path $tempScriptPath -Value $marketplaceScript
     
-    # Run the script
     & $tempScriptPath
     
-    # Clean up
     Remove-Item -Path $tempScriptPath -Force -ErrorAction SilentlyContinue
     
     Write-Host "Marketplace installation completed" -ForegroundColor Green
@@ -603,11 +575,9 @@ function Test-SpicetifyCommand {
     $testResult = & "$spicetifyFolderPath\spicetify.exe" -v
     Write-Success "Version: $testResult"
     
-    # Try refreshing the PATH and testing again if direct execution worked
     if ($testResult) {
       Write-Host "Refreshing PowerShell PATH and testing system-wide command..." -NoNewline
       try {
-        # Update PATH for the current session
         $env:PATH = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
         $globalTest = spicetify -v
         Write-Success "Global command test successful: $globalTest"
@@ -630,7 +600,6 @@ function Test-SpicetifyCommand {
 
 #region Main
 try {
-  # Check prerequisites
   if (-not (Test-Admin)) {
     Write-Warning "The script is being run as administrator. This can result in problems with the installation process."
     Write-Success "Proceeding anyway"
@@ -638,7 +607,6 @@ try {
     Write-Success "Not running as administrator"
   }
   
-  # Process old Spicetify folder if it exists
   if (Test-Path -Path $spicetifyOldFolderPath) {
     Write-Host "Moving old Spicetify folder..." -NoNewline
     if (!(Test-Path -Path $spicetifyFolderPath)) {
@@ -649,18 +617,14 @@ try {
     Write-Success
   }
   
-  # Install Spicetify
   $installPath = Install-Spicetify
   
-  # Test the Spicetify command
   $commandWorks = Test-SpicetifyCommand
   
-  # Install Marketplace
   if ($commandWorks) {
     Install-SpicetifyMarketplace
   }
   
-  # Summary
   Write-Host ""
   Write-Host "== Installation Summary ==" -ForegroundColor Cyan
   Write-Host "Installation directory: $installPath"
@@ -676,7 +640,6 @@ try {
   Write-Host " spicetify -h " -NoNewline -ForegroundColor Cyan
   Write-Host "or open a new terminal window if the command is not recognized."
   
-  # Diagnostic info
   Write-Host ""
   Write-Host "== Diagnostic Information ==" -ForegroundColor Cyan
   Write-Host "PATH variable contains Spicetify directory: $([Environment]::GetEnvironmentVariable('PATH', 'User') -like '*spicetify*')"
@@ -747,7 +710,6 @@ catch {
     }
 }
 
-// Update the check_versions function to add the Cargo.toml dependency
 #[tauri::command]
 pub async fn check_versions() -> Result<VersionInfo, String> {
     if CHECKING_UPDATES
@@ -757,11 +719,9 @@ pub async fn check_versions() -> Result<VersionInfo, String> {
         return Err("Already checking for updates".to_string());
     }
 
-    // Get the current installer version from Cargo.toml
     let installer_version = env!("CARGO_PKG_VERSION").to_string();
     let mut diagnostic_info = String::new();
 
-    // First check if the Spicetify directory exists
     println!("Checking if Spicetify directory exists...");
     diagnostic_info.push_str("Checking Spicetify directories:\n");
 
@@ -788,7 +748,6 @@ pub async fn check_versions() -> Result<VersionInfo, String> {
         spicetify_exe_path, exe_exists
     ));
 
-    // Try direct execution first if the executable exists
     let mut spicetify_version = None;
 
     if exe_exists {
@@ -826,7 +785,6 @@ pub async fn check_versions() -> Result<VersionInfo, String> {
         }
     }
 
-    // Try CMD next if we still don't have a version
     if spicetify_version.is_none() {
         println!("Checking Spicetify version using CMD...");
         diagnostic_info.push_str("\nTrying CMD check:\n");
@@ -861,7 +819,6 @@ pub async fn check_versions() -> Result<VersionInfo, String> {
         }
     }
 
-    // Try PowerShell as a last resort
     if spicetify_version.is_none() {
         println!("Trying fallback PowerShell approach...");
         diagnostic_info.push_str("\nTrying PowerShell check:\n");
@@ -903,14 +860,12 @@ pub async fn check_versions() -> Result<VersionInfo, String> {
         }
     }
 
-    // Check if we need an update (if version was found)
     let has_spicetify_update = if let Some(current_version) = &spicetify_version {
         !current_version.starts_with("2.")
     } else {
         false
     };
 
-    // Check for installer updates
     let (latest_version, download_url) = match check_github_release().await {
         Ok((v, url)) => (Some(v), Some(url)),
         Err(e) => {
@@ -920,23 +875,19 @@ pub async fn check_versions() -> Result<VersionInfo, String> {
         }
     };
 
-    // Replace with this improved version comparison that handles alpha/beta versions:
     let has_installer_update = if let Some(latest) = &latest_version {
         println!(
             "Comparing versions: current={}, latest={}",
             installer_version, latest
         );
 
-        // First, try to compare versions directly as strings
         if latest != &installer_version {
-            // Extract numeric parts for comparison
             let current_parts: Vec<&str> =
                 installer_version.split(|c: char| !c.is_digit(10)).collect();
             let latest_parts: Vec<&str> = latest.split(|c: char| !c.is_digit(10)).collect();
 
             let mut is_newer = false;
 
-            // Compare each numeric part
             for i in 0..std::cmp::min(current_parts.len(), latest_parts.len()) {
                 if !current_parts[i].is_empty() && !latest_parts[i].is_empty() {
                     let current_num = current_parts[i].parse::<i32>().unwrap_or(0);
@@ -949,14 +900,10 @@ pub async fn check_versions() -> Result<VersionInfo, String> {
                 }
             }
 
-            // If all numeric parts are equal, the longer version is considered newer
-            // (e.g., "1.0.2" is newer than "1.0")
             if !is_newer && latest_parts.len() != current_parts.len() {
                 is_newer = latest_parts.len() > current_parts.len();
             }
 
-            // If we get here and still not determined, compare the full strings
-            // This handles cases like "1.0.1-Alpha" vs "1.0.2-Alpha"
             if !is_newer {
                 is_newer = latest > &installer_version;
             }
@@ -1159,4 +1106,32 @@ pub async fn check_spicetify_location() -> Result<String, String> {
     }
 
     Ok(result)
+}
+
+#[tauri::command]
+pub async fn check_for_app_updates(app_handle: AppHandle) -> Result<UpdateInfo, String> {
+    let update_manager = UpdateManager::new(app_handle);
+    update_manager.check_for_updates().await
+}
+
+#[tauri::command]
+pub async fn download_and_install_update(
+    app_handle: AppHandle,
+    download_url: String,
+) -> Result<(), String> {
+    let update_manager = UpdateManager::new(app_handle);
+    update_manager.download_and_install_update(download_url).await
+}
+
+#[tauri::command]
+pub async fn restart_application(app_handle: AppHandle) -> Result<(), String> {
+    let current_exe = std::env::current_exe()
+        .map_err(|e| format!("Failed to get executable path: {}", e))?;
+
+    std::process::Command::new(&current_exe)
+        .spawn()
+        .map_err(|e| format!("Failed to restart application: {}", e))?;
+
+    app_handle.exit(0);
+    Ok(())
 }

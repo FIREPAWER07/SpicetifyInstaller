@@ -14,20 +14,17 @@ export class DropdownHandler {
     this.selectedOption = document.getElementById("selected-option")!
     this.optionSelectedCallback = optionSelectedCallback
 
-    // Create a portal for the dropdown to ensure it's always on top
     this.createDropdownPortal()
     this.initEventListeners()
   }
 
   private createDropdownPortal(): void {
-    // Create a portal element at the body level to ensure proper z-index stacking
     this.dropdownPortal = document.createElement("div")
     this.dropdownPortal.id = "dropdown-portal"
     this.dropdownPortal.className = "dropdown-menu-portal hidden"
     this.dropdownPortal.innerHTML = this.dropdownMenu.innerHTML
     document.body.appendChild(this.dropdownPortal)
 
-    // Hide the original dropdown
     this.dropdownMenu.style.display = "none"
   }
 
@@ -37,7 +34,6 @@ export class DropdownHandler {
       this.toggleDropdown()
     })
 
-    // Close dropdown when clicking outside
     document.addEventListener("click", (event) => {
       if (
         !this.dropdownButton.contains(event.target as Node) &&
@@ -48,7 +44,6 @@ export class DropdownHandler {
       }
     })
 
-    // Add event listeners to the portal dropdown items
     if (this.dropdownPortal) {
       this.dropdownPortal.querySelectorAll(".dropdown-item").forEach((item) => {
         item.addEventListener("click", () => {
@@ -71,7 +66,6 @@ export class DropdownHandler {
 
   private openDropdown(): void {
     if (this.dropdownPortal) {
-      // Position the portal dropdown under the button
       const buttonRect = this.dropdownButton.getBoundingClientRect()
       this.dropdownPortal.style.position = "absolute"
       this.dropdownPortal.style.top = `${buttonRect.bottom + window.scrollY + 5}px`
