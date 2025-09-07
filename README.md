@@ -47,7 +47,7 @@ Grab the latest release from the **[Releases](https://github.com/FIREPAWER07/Spi
 ---
 
 ## ❗ Known Issues
-- **Slow installation**
+- **Slow installation** (Unfixable, Spicetify download is slow even without the installer)
 ---
 
 ## 🔮 Future Planned Updates!
