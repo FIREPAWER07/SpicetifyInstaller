@@ -1,4 +1,4 @@
-# 🎵 Spicetify Installer (By FIREPAWER07) 🎵
+# 🎵 Spicetify Installer (By [FIREPAWER07](https://github.com/FIREPAWER07)) 🎵
 
 ![Spicetify Installer Banner](https://i.imgur.com/aVn70EB.png)
 
