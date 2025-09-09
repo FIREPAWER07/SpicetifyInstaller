@@ -94,7 +94,7 @@ Follow the repo and check the releases page for the latest updates. Thanks for s
 
 ## ⚙️ Other Projects I've Made  
 
-### 🎵 OmniKinkList  
+### 🔥 OmniKinkList  
 
 <table>
   <tr>
