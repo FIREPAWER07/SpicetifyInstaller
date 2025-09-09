@@ -104,7 +104,7 @@ Follow the repo and check the releases page for the latest updates. Thanks for s
       </a>
     </td>
     <td>
-      A clean and simple installer for Spicetify, making it easier than ever to customize your Spotify experience.  
+      A modern, interactive web app designed for degenerates who want to explore, track, and share their personal preferences—with style, efficiency, and full customization.  
       <br><br>
       🔗 <a href="https://github.com/FIREPAWER07/OmniKinkList">Check it out here!</a>
       🔗 <a href="https://FIREPAWER07.github.io/OmniKinkList/">Check the Live Demo!</a>
