@@ -89,3 +89,25 @@ If you appreciate my work and want to support the development of this project, c
 
 ## ⚡ Stay Updated
 Follow the repo and check the releases page for the latest updates. Thanks for supporting and happy customizing!
+
+---
+
+## ⚙️ Other Projects I've Made  
+
+### 🎵 OmniKinkList  
+
+<table>
+  <tr>
+    <td width="200">
+      <a href="https://github.com/FIREPAWER07/OmniKinkList">
+        <img src="https://i.imgur.com/aTl3wv5.png" alt="OmniKinkList Logo" width="180">
+      </a>
+    </td>
+    <td>
+      A clean and simple installer for Spicetify, making it easier than ever to customize your Spotify experience.  
+      <br><br>
+      🔗 <a href="https://github.com/FIREPAWER07/OmniKinkList">Check it out here!</a>
+      🔗 <a href="https://FIREPAWER07.github.io/OmniKinkList/">Check the Live Demo!</a>
+    </td>
+  </tr>
+</table>
