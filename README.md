@@ -1,6 +1,6 @@
 # 🎵 Spicetify Installer (By [FIREPAWER07](https://github.com/FIREPAWER07)) 🎵
 
-![Spicetify Installer Banner](https://i.imgur.com/aVn70EB.png)
+[![Spicetify Installer Banner](https://i.imgur.com/aVn70EB.png)](https://github.com/FIREPAWER07/SpicetifyInstaller/releases/latest)
 
 [![GitHub release](https://img.shields.io/github/release/FIREPAWER07/SpicetifyInstaller.svg)](https://github.com/FIREPAWER07/SpicetifyInstaller/releases/latest)
 [![GitHub issues](https://img.shields.io/github/issues/FIREPAWER07/SpicetifyInstaller.svg)](https://github.com/FIREPAWER07/SpicetifyInstaller/issues)
