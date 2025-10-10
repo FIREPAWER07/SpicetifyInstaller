@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core"
 import { listen } from "@tauri-apps/api/event"
 import { DropdownHandler } from "./dropdown-handler"
-import { UpdateManager, type UpdateInfo, type UpdateProgress } from "./update-manager"
+import { UpdateManager, type UpdateInfo, type UpdateProgress, type SpicetifyUpdateInfo } from "./update-manager"
 
 interface SpicetifyCommand {
   name: string
@@ -16,6 +16,8 @@ interface VersionInfo {
   hasSpicetifyUpdate: boolean
   latestInstallerVersion: string | null
   latestInstallerUrl: string | null
+  latestSpicetifyVersion: string | null
+  spicetifyDownloadUrl: string | null
 }
 
 class LoadingManager {
@@ -78,59 +80,49 @@ class LoadingManager {
 
 class AnsiParser {
   private static readonly ANSI_COLORS = {
-    // Standard colors
-    30: "#000000", // black
-    31: "#cd0000", // red
-    32: "#00cd00", // green
-    33: "#cdcd00", // yellow
-    34: "#0000ee", // blue
-    35: "#cd00cd", // magenta
-    36: "#00cdcd", // cyan
-    37: "#e5e5e5", // white
-    // Bright colors
-    90: "#7f7f7f", // bright black (gray)
-    91: "#ff0000", // bright red
-    92: "#00ff00", // bright green
-    93: "#ffff00", // bright yellow
-    94: "#5c5cff", // bright blue
-    95: "#ff00ff", // bright magenta
-    96: "#00ffff", // bright cyan
-    97: "#ffffff", // bright white
-    // Background colors
-    40: "#000000", // black bg
-    41: "#cd0000", // red bg
-    42: "#00cd00", // green bg
-    43: "#cdcd00", // yellow bg
-    44: "#0000ee", // blue bg
-    45: "#cd00cd", // magenta bg
-    46: "#00cdcd", // cyan bg
-    47: "#e5e5e5", // white bg
-    // Bright background colors
-    100: "#7f7f7f", // bright black bg
-    101: "#ff0000", // bright red bg
-    102: "#00ff00", // bright green bg
-    103: "#ffff00", // bright yellow bg
-    104: "#5c5cff", // bright blue bg
-    105: "#ff00ff", // bright magenta bg
-    106: "#00ffff", // bright cyan bg
-    107: "#ffffff", // bright white bg
+    30: "#000000",
+    31: "#cd0000",
+    32: "#00cd00",
+    33: "#cdcd00",
+    34: "#0000ee",
+    35: "#cd00cd",
+    36: "#00cdcd",
+    37: "#e5e5e5",
+    90: "#7f7f7f",
+    91: "#ff0000",
+    92: "#00ff00",
+    93: "#ffff00",
+    94: "#5c5cff",
+    95: "#ff00ff",
+    96: "#00ffff",
+    97: "#ffffff",
+    40: "#000000",
+    41: "#cd0000",
+    42: "#00cd00",
+    43: "#cdcd00",
+    44: "#0000ee",
+    45: "#cd00cd",
+    46: "#00cdcd",
+    47: "#e5e5e5",
+    100: "#7f7f7f",
+    101: "#ff0000",
+    102: "#00ff00",
+    103: "#ffff00",
+    104: "#5c5cff",
+    105: "#ff00ff",
+    106: "#00ffff",
+    107: "#ffffff",
   }
 
   static parseAnsiToHtml(text: string): string {
-    console.log("Original text:", text.substring(0, 200) + "...")
-
-    // Handle both full ANSI escape sequences (\x1b[...m) and bracket-only format ([...m)
     const result = text
-      // First handle full ANSI escape sequences
       .replace(/\x1b\[([0-9;]*)m/g, (match, codes) => {
         return this.processAnsiCodes(codes)
       })
-      // Then handle bracket-only format (like [33m, [0m)
       .replace(/\[([0-9;]*)m/g, (match, codes) => {
         return this.processAnsiCodes(codes)
       })
 
-    console.log("Processed text:", result.substring(0, 200) + "...")
     return result
   }
 
@@ -149,48 +141,39 @@ class AnsiParser {
       const code = codeList[i]
 
       if (code === 0) {
-        // Reset - close any open spans
         return "</span>"
       } else if (code === 1) {
-        // Bold
         styles.push("font-weight: bold")
         hasStyles = true
       } else if (code === 2) {
-        // Dim
         styles.push("opacity: 0.7")
         hasStyles = true
       } else if (code === 3) {
-        // Italic
         styles.push("font-style: italic")
         hasStyles = true
       } else if (code === 4) {
-        // Underline
         styles.push("text-decoration: underline")
         hasStyles = true
       } else if ((code >= 30 && code <= 37) || (code >= 90 && code <= 97)) {
-        // Foreground colors
         const color = this.ANSI_COLORS[code as keyof typeof this.ANSI_COLORS]
         if (color) {
           styles.push(`color: ${color}`)
           hasStyles = true
         }
       } else if ((code >= 40 && code <= 47) || (code >= 100 && code <= 107)) {
-        // Background colors
         const color = this.ANSI_COLORS[code as keyof typeof this.ANSI_COLORS]
         if (color) {
           styles.push(`background-color: ${color}`)
           hasStyles = true
         }
       } else if (code === 38 && i + 1 < codeList.length) {
-        // Extended foreground color
         if (codeList[i + 1] === 2 && i + 4 < codeList.length) {
-          // RGB color: 38;2;r;g;b
           const r = codeList[i + 2]
           const g = codeList[i + 3]
           const b = codeList[i + 4]
           styles.push(`color: rgb(${r}, ${g}, ${b})`)
           hasStyles = true
-          i += 4 // Skip the processed codes
+          i += 4
         }
       }
     }
@@ -203,15 +186,10 @@ class AnsiParser {
   }
 
   static cleanAnsiText(text: string): string {
-    // First convert ANSI to HTML
     let cleaned = this.parseAnsiToHtml(text)
 
-    // Remove any remaining unprocessed ANSI escape sequences
-    cleaned = cleaned
-      .replace(/\x1b\[[0-9;]*m/g, "") // Full escape sequences
-      .replace(/\[[0-9;]*m/g, "") // Bracket-only sequences
+    cleaned = cleaned.replace(/\x1b\[[0-9;]*m/g, "").replace(/\[([0-9;]*)m/g, "")
 
-    // Ensure we close any unclosed spans
     const openSpans = (cleaned.match(/<span[^>]*>/g) || []).length
     const closeSpans = (cleaned.match(/<\/span>/g) || []).length
 
@@ -219,7 +197,6 @@ class AnsiParser {
       cleaned += "</span>".repeat(openSpans - closeSpans)
     }
 
-    // Clean up any double closing spans
     cleaned = cleaned.replace(/<\/span><\/span>/g, "</span>")
 
     return cleaned
@@ -284,10 +261,6 @@ class SpicetifyInstallerApp {
   constructor() {
     this.loadingManager = new LoadingManager()
 
-    this.dom.appVersionElement.textContent = "Loading app version..."
-    this.dom.spicetifyVersionElement.textContent = "Checking Spicetify version..."
-    this.dom.footerVersionElement.textContent = "Loading..."
-
     this.updateManager = new UpdateManager()
     this.updateManager.setProgressCallback((progress) => {
       this.handleUpdateProgress(progress)
@@ -307,6 +280,10 @@ class SpicetifyInstallerApp {
       this.loadingManager.activateStep(0)
       this.loadingManager.updateLoadingText("Loading application components...")
 
+      this.dom.appVersionElement.textContent = "Loading app version..."
+      this.dom.spicetifyVersionElement.textContent = "Checking Spicetify version..."
+      this.dom.footerVersionElement.textContent = "Loading..."
+
       await this.delay(1000)
       this.loadingManager.completeStep(0)
 
@@ -322,7 +299,7 @@ class SpicetifyInstallerApp {
       await this.runInitialDiagnostic()
       this.loadingManager.completeStep(2)
 
-      await this.checkForAppUpdates()
+      await this.checkForAllUpdates()
 
       this.loadingManager.updateLoadingText("Initialization complete!")
       await this.delay(500)
@@ -340,14 +317,25 @@ class SpicetifyInstallerApp {
     return new Promise((resolve) => setTimeout(resolve, ms))
   }
 
-  private async checkForAppUpdates(): Promise<void> {
+  private async checkForAllUpdates(): Promise<void> {
     try {
-      const updateInfo = await this.updateManager.checkForUpdates()
-      if (updateInfo && updateInfo.updateAvailable) {
-        this.showUpdateNotification(updateInfo)
+      const appUpdateInfo = await this.updateManager.checkForUpdates()
+      if (appUpdateInfo && appUpdateInfo.updateAvailable) {
+        setTimeout(() => {
+          this.showUpdateNotification(appUpdateInfo)
+        }, 1000)
+      }
+
+      const spicetifyUpdateInfo = await this.updateManager.checkForSpicetifyUpdates()
+      if (spicetifyUpdateInfo && spicetifyUpdateInfo.update_available) {
+        setTimeout(() => {
+          if (!appUpdateInfo || !appUpdateInfo.updateAvailable) {
+            this.showSpicetifyUpdateNotification(spicetifyUpdateInfo)
+          }
+        }, 2000)
       }
     } catch (error) {
-      console.error("Failed to check for app updates:", error)
+      console.error("Failed to check for updates:", error)
     }
   }
 
@@ -357,7 +345,6 @@ class SpicetifyInstallerApp {
     updateNotification.classList.remove("hidden")
     updateNotification.classList.add("update-notification-badge")
 
-    // Remove any existing click handlers
     const newNotification = updateNotification.cloneNode(true) as HTMLElement
     updateNotification.parentNode?.replaceChild(newNotification, updateNotification)
     this.dom.updateNotificationElement = newNotification
@@ -369,6 +356,27 @@ class SpicetifyInstallerApp {
         console.log("Update dialog result:", success)
       } catch (error) {
         console.error("Error showing update dialog:", error)
+      }
+    }
+  }
+
+  private showSpicetifyUpdateNotification(updateInfo: SpicetifyUpdateInfo): void {
+    const updateNotification = this.dom.updateNotificationElement
+    updateNotification.textContent = `Spicetify Update Available: v${updateInfo.latest_version}`
+    updateNotification.classList.remove("hidden")
+    updateNotification.classList.add("update-notification-badge")
+
+    const newNotification = updateNotification.cloneNode(true) as HTMLElement
+    updateNotification.parentNode?.replaceChild(newNotification, updateNotification)
+    this.dom.updateNotificationElement = newNotification
+
+    newNotification.onclick = async () => {
+      console.log("Spicetify update notification clicked")
+      try {
+        await this.updateManager.showSpicetifyUpdateDialog(updateInfo)
+        await this.checkVersions()
+      } catch (error) {
+        console.error("Error showing Spicetify update dialog:", error)
       }
     }
   }
@@ -566,11 +574,7 @@ class SpicetifyInstallerApp {
   }
 
   private appendOutput(text: string): void {
-    console.log("Raw output text:", text.substring(0, 100))
-
-    // Parse ANSI color codes to HTML
     const coloredText = AnsiParser.cleanAnsiText(text)
-    console.log("Colored text:", coloredText.substring(0, 100))
 
     this.outputBuffer += coloredText
 
@@ -628,9 +632,9 @@ class SpicetifyInstallerApp {
       this.updateVersionUI(versionInfo)
     } catch (error) {
       console.error("Error checking versions:", error)
-      this.dom.appVersionElement.textContent = "App v1.0.2-Alpha"
+      this.dom.appVersionElement.textContent = "App v1.0.6-alpha"
       this.dom.spicetifyVersionElement.textContent = "Version check failed"
-      this.dom.footerVersionElement.textContent = "v1.0.2-Alpha"
+      this.dom.footerVersionElement.textContent = "v1.0.6-alpha"
     }
   }
 
@@ -671,7 +675,7 @@ class SpicetifyInstallerApp {
   }
 
   private updateVersionUI(versionInfo: VersionInfo): void {
-    const appVersion = versionInfo.installerVersion || "1.0.2-Alpha"
+    const appVersion = versionInfo.installerVersion || "1.0.6-alpha"
     this.dom.appVersionElement.textContent = `App v${appVersion}`
     this.dom.appVersionElement.classList.add("app-version-badge")
     this.dom.footerVersionElement.textContent = `v${appVersion}`
@@ -763,10 +767,17 @@ class SpicetifyInstallerApp {
 
         console.log("Showing update dialog with info:", updateInfo)
         await this.updateManager.showUpdateDialog(updateInfo)
-      } else if (versionInfo.hasSpicetifyUpdate) {
-        // Handle Spicetify update by running install command
-        this.selectOption("INSTALL", SpicetifyInstallerApp.COMMANDS[0].command)
-        await this.executeCommand()
+      } else if (versionInfo.hasSpicetifyUpdate && versionInfo.latestSpicetifyVersion) {
+        const spicetifyUpdateInfo: SpicetifyUpdateInfo = {
+          current_version: versionInfo.spicetifyVersion || "unknown",
+          latest_version: versionInfo.latestSpicetifyVersion,
+          download_url: versionInfo.spicetifyDownloadUrl || "",
+          update_available: true,
+        }
+
+        console.log("Showing Spicetify update dialog with info:", spicetifyUpdateInfo)
+        await this.updateManager.showSpicetifyUpdateDialog(spicetifyUpdateInfo)
+        await this.checkVersions()
       }
     } catch (error) {
       console.error("Error handling update:", error)
@@ -778,9 +789,16 @@ class SpicetifyInstallerApp {
     try {
       const versionInfo = await invoke<VersionInfo>("check_versions")
 
-      if (versionInfo.hasSpicetifyUpdate) {
-        this.selectOption("INSTALL", SpicetifyInstallerApp.COMMANDS[0].command)
-        await this.executeCommand()
+      if (versionInfo.hasSpicetifyUpdate && versionInfo.latestSpicetifyVersion) {
+        const spicetifyUpdateInfo: SpicetifyUpdateInfo = {
+          current_version: versionInfo.spicetifyVersion || "unknown",
+          latest_version: versionInfo.latestSpicetifyVersion,
+          download_url: versionInfo.spicetifyDownloadUrl || "",
+          update_available: true,
+        }
+
+        await this.updateManager.showSpicetifyUpdateDialog(spicetifyUpdateInfo)
+        await this.checkVersions()
       }
     } catch (error) {
       console.error("Error handling Spicetify version click:", error)

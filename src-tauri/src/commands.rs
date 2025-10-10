@@ -22,6 +22,18 @@ pub struct VersionInfo {
     pub latest_installer_version: Option<String>,
     #[serde(rename = "latestInstallerUrl")]
     pub latest_installer_url: Option<String>,
+    #[serde(rename = "latestSpicetifyVersion")]
+    pub latest_spicetify_version: Option<String>,
+    #[serde(rename = "spicetifyDownloadUrl")]
+    pub spicetify_download_url: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SpicetifyUpdateInfo {
+    pub current_version: String,
+    pub latest_version: String,
+    pub download_url: String,
+    pub update_available: bool,
 }
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -31,21 +43,24 @@ async fn check_github_release() -> Result<(String, String), String> {
     println!("Checking for latest release on GitHub...");
 
     let client = reqwest::Client::builder()
-        .user_agent("Spicetify-Installer")
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .timeout(Duration::from_secs(10))
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
     let response = client
         .get("https://api.github.com/repos/FIREPAWER07/SpicetifyInstaller/releases/latest")
+        .header("Accept", "application/vnd.github.v3+json")
         .send()
         .await
         .map_err(|e| format!("Failed to fetch latest release: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!(
-            "GitHub API returned status code: {}",
-            response.status()
-        ));
+        let status = response.status();
+        if status.as_u16() == 403 {
+            return Err("GitHub API rate limit exceeded. Please try again later.".to_string());
+        }
+        return Err(format!("GitHub API returned status code: {}", status));
     }
 
     let release_info: serde_json::Value = response
@@ -88,6 +103,378 @@ async fn check_github_release() -> Result<(String, String), String> {
     Ok((tag_name.trim_start_matches('v').to_string(), download_url))
 }
 
+async fn check_spicetify_release() -> Result<(String, String), String> {
+    println!("Checking for latest Spicetify CLI release on GitHub...");
+
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    let response = client
+        .get("https://api.github.com/repos/spicetify/cli/releases/latest")
+        .header("Accept", "application/vnd.github.v3+json")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch Spicetify release: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        if status.as_u16() == 403 {
+            return Err("GitHub API rate limit exceeded. Please try again later.".to_string());
+        }
+        return Err(format!("GitHub API returned status code: {}", status));
+    }
+
+    let release_info: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse GitHub response: {}", e))?;
+
+    let tag_name = release_info["tag_name"]
+        .as_str()
+        .ok_or("Missing tag_name in GitHub response")?
+        .trim_start_matches('v')
+        .to_string();
+
+    // Spicetify uses the install script, not direct download
+    let download_url = "https://raw.githubusercontent.com/spicetify/spicetify-cli/master/install.ps1".to_string();
+
+    println!(
+        "Found latest Spicetify version: {} with install URL: {}",
+        tag_name, download_url
+    );
+    Ok((tag_name, download_url))
+}
+
+#[tauri::command]
+pub async fn check_versions() -> Result<VersionInfo, String> {
+    if CHECKING_UPDATES
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return Err("Already checking for updates".to_string());
+    }
+
+    let installer_version = env!("CARGO_PKG_VERSION").to_string();
+    let mut diagnostic_info = String::new();
+
+    println!("Checking if Spicetify directory exists...");
+    diagnostic_info.push_str("Checking Spicetify directories:\n");
+
+    let localappdata_path = match env::var("LOCALAPPDATA") {
+        Ok(path) => path,
+        Err(_) => {
+            diagnostic_info.push_str("- Failed to get LOCALAPPDATA environment variable\n");
+            String::new()
+        }
+    };
+
+    let spicetify_path = format!("{}\\spicetify", localappdata_path);
+    let spicetify_exe_path = format!("{}\\spicetify.exe", spicetify_path);
+
+    let dir_exists = std::path::Path::new(&spicetify_path).exists();
+    let exe_exists = std::path::Path::new(&spicetify_exe_path).exists();
+
+    diagnostic_info.push_str(&format!(
+        "- Spicetify directory exists at {}: {}\n",
+        spicetify_path, dir_exists
+    ));
+    diagnostic_info.push_str(&format!(
+        "- Spicetify executable exists at {}: {}\n",
+        spicetify_exe_path, exe_exists
+    ));
+
+    let mut spicetify_version = None;
+
+    if exe_exists {
+        println!("Trying direct Spicetify executable check...");
+        diagnostic_info.push_str("\nTrying direct executable check:\n");
+
+        let direct_output = Command::new(&spicetify_exe_path)
+            .creation_flags(0x08000000)
+            .args(&["-v"])
+            .output();
+
+        match direct_output {
+            Ok(output) => {
+                if output.status.success() {
+                    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    diagnostic_info
+                        .push_str(&format!("- Direct executable check result: {}\n", version));
+                    if !version.is_empty() {
+                        spicetify_version = Some(version);
+                    }
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                    diagnostic_info.push_str(&format!(
+                        "- Direct executable check failed with status: {}\n",
+                        output.status
+                    ));
+                    if !stderr.is_empty() {
+                        diagnostic_info.push_str(&format!("- Error: {}\n", stderr));
+                    }
+                }
+            }
+            Err(e) => {
+                diagnostic_info.push_str(&format!("- Direct executable check error: {}\n", e));
+            }
+        }
+    }
+
+    if spicetify_version.is_none() {
+        println!("Checking Spicetify version using CMD...");
+        diagnostic_info.push_str("\nTrying CMD check:\n");
+
+        let cmd_output = Command::new("cmd")
+            .creation_flags(0x08000000)
+            .args(&["/c", "spicetify -v"])
+            .output();
+
+        match cmd_output {
+            Ok(output) => {
+                if output.status.success() {
+                    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    diagnostic_info.push_str(&format!("- CMD check result: {}\n", version));
+                    if !version.is_empty() {
+                        spicetify_version = Some(version);
+                    }
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                    diagnostic_info.push_str(&format!(
+                        "- CMD check failed with status: {}\n",
+                        output.status
+                    ));
+                    if !stderr.is_empty() {
+                        diagnostic_info.push_str(&format!("- Error: {}\n", stderr));
+                    }
+                }
+            }
+            Err(e) => {
+                diagnostic_info.push_str(&format!("- CMD check error: {}\n", e));
+            }
+        }
+    }
+
+    if spicetify_version.is_none() {
+        println!("Trying fallback PowerShell approach...");
+        diagnostic_info.push_str("\nTrying PowerShell check:\n");
+
+        let ps_output = Command::new("powershell")
+            .creation_flags(0x08000000)
+            .args(&[
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                "spicetify -v",
+            ])
+            .output();
+
+        match ps_output {
+            Ok(output) => {
+                if output.status.success() {
+                    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    diagnostic_info.push_str(&format!("- PowerShell check result: {}\n", version));
+                    if !version.is_empty() {
+                        spicetify_version = Some(version);
+                    }
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                    diagnostic_info.push_str(&format!(
+                        "- PowerShell check failed with status: {}\n",
+                        output.status
+                    ));
+                    if !stderr.is_empty() {
+                        diagnostic_info.push_str(&format!("- Error: {}\n", stderr));
+                    }
+                }
+            }
+            Err(e) => {
+                diagnostic_info.push_str(&format!("- PowerShell check error: {}\n", e));
+            }
+        }
+    }
+
+    let (latest_spicetify_version, spicetify_download_url) = match check_spicetify_release().await {
+        Ok((v, url)) => (Some(v), Some(url)),
+        Err(e) => {
+            println!("Error checking Spicetify GitHub: {}", e);
+            diagnostic_info.push_str(&format!("\nSpicetify GitHub check error: {}\n", e));
+            (None, None)
+        }
+    };
+
+    let has_spicetify_update = if let (Some(current), Some(latest)) = (&spicetify_version, &latest_spicetify_version) {
+        let current_clean = current.trim().trim_start_matches('v');
+        let latest_clean = latest.trim().trim_start_matches('v');
+        
+        println!("Comparing Spicetify versions: current={}, latest={}", current_clean, latest_clean);
+        
+        is_version_newer(latest_clean, current_clean)
+    } else {
+        false // Confirmed: has_spicetify_update returns false when Spicetify is not installed
+    };
+
+    let (latest_version, download_url) = match check_github_release().await {
+        Ok((v, url)) => (Some(v), Some(url)),
+        Err(e) => {
+            println!("Error checking GitHub: {}", e);
+            diagnostic_info.push_str(&format!("\nGitHub check error: {}\n", e));
+            (None, None)
+        }
+    };
+
+    let has_installer_update = if let Some(latest) = &latest_version {
+        println!(
+            "Comparing versions: current={}, latest={}",
+            installer_version, latest
+        );
+
+        if latest != &installer_version {
+            let current_parts: Vec<&str> =
+                installer_version.split(|c: char| !c.is_digit(10)).collect();
+            let latest_parts: Vec<&str> = latest.split(|c: char| !c.is_digit(10)).collect();
+
+            let mut is_newer = false;
+
+            for i in 0..std::cmp::min(current_parts.len(), latest_parts.len()) {
+                if !current_parts[i].is_empty() && !latest_parts[i].is_empty() {
+                    let current_num = current_parts[i].parse::<i32>().unwrap_or(0);
+                    let latest_num = latest_parts[i].parse::<i32>().unwrap_or(0);
+
+                    if latest_num != current_num {
+                        is_newer = latest_num > current_num;
+                        break;
+                    }
+                }
+            }
+
+            if !is_newer && latest_parts.len() != current_parts.len() {
+                is_newer = latest_parts.len() > current_parts.len();
+            }
+
+            if !is_newer {
+                is_newer = latest > &installer_version;
+            }
+
+            is_newer
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    println!(
+        "Final version info: installer={}, spicetify={:?}, has_spicetify_update={}, has_installer_update={}",
+        installer_version, spicetify_version, has_spicetify_update, has_installer_update
+    );
+
+    diagnostic_info.push_str(&format!("\nFinal version info: installer={}, spicetify={:?}, has_spicetify_update={}, has_installer_update={}, diagnostic_complete=true",
+        installer_version, spicetify_version, has_spicetify_update, has_installer_update));
+
+    println!("Diagnostic info:\n{}", diagnostic_info);
+
+    CHECKING_UPDATES.store(false, Ordering::SeqCst);
+
+    Ok(VersionInfo {
+        installer_version,
+        spicetify_version,
+        has_installer_update,
+        has_spicetify_update,
+        latest_installer_version: latest_version,
+        latest_installer_url: download_url,
+        latest_spicetify_version,
+        spicetify_download_url,
+    })
+}
+
+fn is_version_newer(latest: &str, current: &str) -> bool {
+    let latest_parts: Vec<u32> = latest.split('.')
+        .filter_map(|s| s.parse().ok())
+        .collect();
+    let current_parts: Vec<u32> = current.split('.')
+        .filter_map(|s| s.parse().ok())
+        .collect();
+
+    for i in 0..std::cmp::max(latest_parts.len(), current_parts.len()) {
+        let latest_part = latest_parts.get(i).unwrap_or(&0);
+        let current_part = current_parts.get(i).unwrap_or(&0);
+
+        if latest_part > current_part {
+            return true;
+        } else if latest_part < current_part {
+            return false;
+        }
+    }
+
+    false
+}
+
+#[tauri::command]
+pub async fn check_for_spicetify_updates() -> Result<SpicetifyUpdateInfo, String> {
+    println!("Checking for Spicetify CLI updates...");
+    
+    // Get current Spicetify version
+    let current_version = get_current_spicetify_version().await?;
+    
+    // Get latest Spicetify version from GitHub
+    let (latest_version, download_url) = check_spicetify_release().await?;
+    
+    let update_available = is_version_newer(&latest_version, &current_version);
+    
+    println!(
+        "Spicetify update check: current={}, latest={}, update_available={}",
+        current_version, latest_version, update_available
+    );
+    
+    Ok(SpicetifyUpdateInfo {
+        current_version,
+        latest_version,
+        download_url,
+        update_available,
+    })
+}
+
+async fn get_current_spicetify_version() -> Result<String, String> {
+    let localappdata_path = env::var("LOCALAPPDATA")
+        .map_err(|_| "Failed to get LOCALAPPDATA environment variable".to_string())?;
+    
+    let spicetify_exe_path = format!("{}\\spicetify\\spicetify.exe", localappdata_path);
+    
+    if std::path::Path::new(&spicetify_exe_path).exists() {
+        let output = Command::new(&spicetify_exe_path)
+            .creation_flags(0x08000000)
+            .args(&["-v"])
+            .output()
+            .map_err(|e| format!("Failed to execute spicetify: {}", e))?; 
+        if output.status.success() {
+            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !version.is_empty() {
+                return Ok(version);
+            }
+        }
+    }
+    
+    // Try CMD as fallback
+    let cmd_output = Command::new("cmd")
+        .creation_flags(0x08000000)
+        .args(&["/c", "spicetify -v"])
+        .output()
+        .map_err(|e| format!("Failed to execute spicetify via CMD: {}", e))?; 
+    if cmd_output.status.success() {
+        let version = String::from_utf8_lossy(&cmd_output.stdout).trim().to_string();
+        if !version.is_empty() {
+            return Ok(version);
+        }
+    }
+    
+    Err("Spicetify is not installed".to_string())
+}
+
 #[tauri::command]
 pub async fn execute_powershell_command(
     command: String,
@@ -109,6 +496,204 @@ pub async fn execute_powershell_command(
 
     let output = execute_with_progress(command, app_handle).await?;
     Ok(output)
+}
+
+#[tauri::command]
+pub async fn download_update(_app_handle: AppHandle) -> Result<(), String> {
+    let version_info = check_versions().await?;
+
+    if !version_info.has_installer_update {
+        return Err("No updates available".to_string());
+    }
+
+    let download_url = version_info
+        .latest_installer_url
+        .ok_or("No download URL available")?;
+
+    let temp_dir = env::temp_dir();
+    let filename = download_url
+        .split('/')
+        .last()
+        .unwrap_or("spicetify-installer-update.exe");
+    let _download_path = temp_dir.join(filename);
+
+    open_download_url().await?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn open_faq_url() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd")
+            .args(&["/c", "start", "https://spicetify.app/docs/faq/"])
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {}", e))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg("https://spicetify.app/docs/faq/")
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {}", e))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("xdg-open")
+            .arg("https://spicetify.app/docs/faq/")
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {}", e))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn open_download_url() -> Result<(), String> {
+    let download_url = "https://github.com/FIREPAWER07/spicetify-installer/releases/latest";
+
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd")
+            .args(&["/c", "start", download_url])
+            .spawn()
+            .map_err(|e| format!("Failed to open download URL: {}", e))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(download_url)
+            .spawn()
+            .map_err(|e| format!("Failed to open download URL: {}", e))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("xdg-open")
+            .arg(download_url)
+            .spawn()
+            .map_err(|e| format!("Failed to open download URL: {}", e))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn check_spicetify_location() -> Result<String, String> {
+    let locations = vec![
+        "%LOCALAPPDATA%\\spicetify",
+        "%USERPROFILE%\\spicetify-cli",
+        "%APPDATA%\\spicetify",
+    ];
+
+    let mut result = String::new();
+    result.push_str("Checking for Spicetify in common locations:\n");
+
+    for location in locations {
+        let expanded_location = if cfg!(target_os = "windows") {
+            Command::new("cmd")
+                .creation_flags(0x08000000)
+                .args(&["/c", &format!("echo {}", location)])
+                .output()
+                .ok()
+                .and_then(|output| {
+                    if output.status.success() {
+                        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| location.to_string())
+        } else {
+            location.to_string()
+        };
+
+        result.push_str(&format!("Checking: {}\n", expanded_location));
+
+        let exists = if cfg!(target_os = "windows") {
+            Command::new("cmd")
+                .creation_flags(0x08000000)
+                .args(&["/c", &format!("if exist \"{}\" echo 1", expanded_location)])
+                .output()
+                .ok()
+                .and_then(|output| {
+                    if output.status.success() && !output.stdout.is_empty() {
+                        Some(true)
+                    } else {
+                        Some(false)
+                    }
+                })
+                .unwrap_or(false)
+        } else {
+            std::path::Path::new(&expanded_location).exists()
+        };
+
+        if exists {
+            result.push_str(&format!("FOUND: {}\n", expanded_location));
+        } else {
+            result.push_str(&format!("Not found: {}\n", expanded_location));
+        }
+    }
+
+    result.push_str("\nChecking PATH for spicetify:\n");
+    let path_check = if cfg!(target_os = "windows") {
+        Command::new("cmd")
+            .creation_flags(0x08000000)
+            .args(&["/c", "where spicetify 2>NUL"])
+            .output()
+    } else {
+        Command::new("sh")
+            .args(&["-c", "which spicetify 2>/dev/null"])
+            .output()
+    };
+
+    match path_check {
+        Ok(output) => {
+            if output.status.success() {
+                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                result.push_str(&format!("Spicetify found in PATH: {}\n", path));
+            } else {
+                result.push_str("Spicetify NOT found in PATH\n");
+            }
+        }
+        Err(e) => {
+            result.push_str(&format!("Error checking PATH: {}\n", e));
+        }
+    }
+
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn check_for_app_updates(app_handle: AppHandle) -> Result<UpdateInfo, String> {
+    let update_manager = UpdateManager::new(app_handle);
+    update_manager.check_for_updates().await
+}
+
+#[tauri::command]
+pub async fn download_and_install_update(
+    app_handle: AppHandle,
+    download_url: String,
+) -> Result<(), String> {
+    let update_manager = UpdateManager::new(app_handle);
+    update_manager.download_and_install_update(download_url).await
+}
+
+#[tauri::command]
+pub async fn restart_application(app_handle: AppHandle) -> Result<(), String> {
+    let current_exe = std::env::current_exe()
+        .map_err(|e| format!("Failed to get executable path: {}", e))?;
+
+    std::process::Command::new(&current_exe)
+        .spawn()
+        .map_err(|e| format!("Failed to restart application: {}", e))?;
+
+    app_handle.exit(0);
+    Ok(())
 }
 
 async fn execute_with_progress(command: String, app_handle: AppHandle) -> Result<String, String> {
@@ -399,7 +984,8 @@ Write-Host "`nBackup process completed successfully!"
     }
 }
 
-async fn install_spicetify_direct(app_handle: AppHandle) -> Result<String, String> {
+#[tauri::command]
+pub async fn install_spicetify_direct(app_handle: AppHandle) -> Result<String, String> {
     let temp_dir = env::temp_dir();
     let install_script_path = temp_dir.join("spicetify_direct_install.ps1");
 
@@ -708,430 +1294,4 @@ catch {
             stderr, stdout
         ))
     }
-}
-
-#[tauri::command]
-pub async fn check_versions() -> Result<VersionInfo, String> {
-    if CHECKING_UPDATES
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_err()
-    {
-        return Err("Already checking for updates".to_string());
-    }
-
-    let installer_version = env!("CARGO_PKG_VERSION").to_string();
-    let mut diagnostic_info = String::new();
-
-    println!("Checking if Spicetify directory exists...");
-    diagnostic_info.push_str("Checking Spicetify directories:\n");
-
-    let localappdata_path = match env::var("LOCALAPPDATA") {
-        Ok(path) => path,
-        Err(_) => {
-            diagnostic_info.push_str("- Failed to get LOCALAPPDATA environment variable\n");
-            String::new()
-        }
-    };
-
-    let spicetify_path = format!("{}\\spicetify", localappdata_path);
-    let spicetify_exe_path = format!("{}\\spicetify.exe", spicetify_path);
-
-    let dir_exists = std::path::Path::new(&spicetify_path).exists();
-    let exe_exists = std::path::Path::new(&spicetify_exe_path).exists();
-
-    diagnostic_info.push_str(&format!(
-        "- Spicetify directory exists at {}: {}\n",
-        spicetify_path, dir_exists
-    ));
-    diagnostic_info.push_str(&format!(
-        "- Spicetify executable exists at {}: {}\n",
-        spicetify_exe_path, exe_exists
-    ));
-
-    let mut spicetify_version = None;
-
-    if exe_exists {
-        println!("Trying direct Spicetify executable check...");
-        diagnostic_info.push_str("\nTrying direct executable check:\n");
-
-        let direct_output = Command::new(&spicetify_exe_path)
-            .creation_flags(0x08000000)
-            .args(&["-v"])
-            .output();
-
-        match direct_output {
-            Ok(output) => {
-                if output.status.success() {
-                    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    diagnostic_info
-                        .push_str(&format!("- Direct executable check result: {}\n", version));
-                    if !version.is_empty() {
-                        spicetify_version = Some(version);
-                    }
-                } else {
-                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                    diagnostic_info.push_str(&format!(
-                        "- Direct executable check failed with status: {}\n",
-                        output.status
-                    ));
-                    if !stderr.is_empty() {
-                        diagnostic_info.push_str(&format!("- Error: {}\n", stderr));
-                    }
-                }
-            }
-            Err(e) => {
-                diagnostic_info.push_str(&format!("- Direct executable check error: {}\n", e));
-            }
-        }
-    }
-
-    if spicetify_version.is_none() {
-        println!("Checking Spicetify version using CMD...");
-        diagnostic_info.push_str("\nTrying CMD check:\n");
-
-        let cmd_output = Command::new("cmd")
-            .creation_flags(0x08000000)
-            .args(&["/c", "spicetify -v"])
-            .output();
-
-        match cmd_output {
-            Ok(output) => {
-                if output.status.success() {
-                    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    diagnostic_info.push_str(&format!("- CMD check result: {}\n", version));
-                    if !version.is_empty() {
-                        spicetify_version = Some(version);
-                    }
-                } else {
-                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                    diagnostic_info.push_str(&format!(
-                        "- CMD check failed with status: {}\n",
-                        output.status
-                    ));
-                    if !stderr.is_empty() {
-                        diagnostic_info.push_str(&format!("- Error: {}\n", stderr));
-                    }
-                }
-            }
-            Err(e) => {
-                diagnostic_info.push_str(&format!("- CMD check error: {}\n", e));
-            }
-        }
-    }
-
-    if spicetify_version.is_none() {
-        println!("Trying fallback PowerShell approach...");
-        diagnostic_info.push_str("\nTrying PowerShell check:\n");
-
-        let ps_output = Command::new("powershell")
-            .creation_flags(0x08000000)
-            .args(&[
-                "-NoProfile",
-                "-NonInteractive",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-Command",
-                "spicetify -v",
-            ])
-            .output();
-
-        match ps_output {
-            Ok(output) => {
-                if output.status.success() {
-                    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    diagnostic_info.push_str(&format!("- PowerShell check result: {}\n", version));
-                    if !version.is_empty() {
-                        spicetify_version = Some(version);
-                    }
-                } else {
-                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                    diagnostic_info.push_str(&format!(
-                        "- PowerShell check failed with status: {}\n",
-                        output.status
-                    ));
-                    if !stderr.is_empty() {
-                        diagnostic_info.push_str(&format!("- Error: {}\n", stderr));
-                    }
-                }
-            }
-            Err(e) => {
-                diagnostic_info.push_str(&format!("- PowerShell check error: {}\n", e));
-            }
-        }
-    }
-
-    let has_spicetify_update = if let Some(current_version) = &spicetify_version {
-        !current_version.starts_with("2.")
-    } else {
-        false
-    };
-
-    let (latest_version, download_url) = match check_github_release().await {
-        Ok((v, url)) => (Some(v), Some(url)),
-        Err(e) => {
-            println!("Error checking GitHub: {}", e);
-            diagnostic_info.push_str(&format!("\nGitHub check error: {}\n", e));
-            (None, None)
-        }
-    };
-
-    let has_installer_update = if let Some(latest) = &latest_version {
-        println!(
-            "Comparing versions: current={}, latest={}",
-            installer_version, latest
-        );
-
-        if latest != &installer_version {
-            let current_parts: Vec<&str> =
-                installer_version.split(|c: char| !c.is_digit(10)).collect();
-            let latest_parts: Vec<&str> = latest.split(|c: char| !c.is_digit(10)).collect();
-
-            let mut is_newer = false;
-
-            for i in 0..std::cmp::min(current_parts.len(), latest_parts.len()) {
-                if !current_parts[i].is_empty() && !latest_parts[i].is_empty() {
-                    let current_num = current_parts[i].parse::<i32>().unwrap_or(0);
-                    let latest_num = latest_parts[i].parse::<i32>().unwrap_or(0);
-
-                    if latest_num != current_num {
-                        is_newer = latest_num > current_num;
-                        break;
-                    }
-                }
-            }
-
-            if !is_newer && latest_parts.len() != current_parts.len() {
-                is_newer = latest_parts.len() > current_parts.len();
-            }
-
-            if !is_newer {
-                is_newer = latest > &installer_version;
-            }
-
-            is_newer
-        } else {
-            false
-        }
-    } else {
-        false
-    };
-
-    println!(
-        "Final version info: installer={}, spicetify={:?}, has_update={}",
-        installer_version, spicetify_version, has_spicetify_update
-    );
-
-    diagnostic_info.push_str(&format!("\nFinal version info: installer={}, spicetify={:?}, has_update={}, diagnostic_complete=true",
-        installer_version, spicetify_version, has_spicetify_update));
-
-    println!("Diagnostic info:\n{}", diagnostic_info);
-
-    CHECKING_UPDATES.store(false, Ordering::SeqCst);
-
-    Ok(VersionInfo {
-        installer_version,
-        spicetify_version,
-        has_installer_update,
-        has_spicetify_update,
-        latest_installer_version: latest_version,
-        latest_installer_url: download_url,
-    })
-}
-
-#[tauri::command]
-pub async fn download_update(_app_handle: AppHandle) -> Result<(), String> {
-    let version_info = check_versions().await?;
-
-    if !version_info.has_installer_update {
-        return Err("No updates available".to_string());
-    }
-
-    let download_url = version_info
-        .latest_installer_url
-        .ok_or("No download URL available")?;
-
-    let temp_dir = env::temp_dir();
-    let filename = download_url
-        .split('/')
-        .last()
-        .unwrap_or("spicetify-installer-update.exe");
-    let _download_path = temp_dir.join(filename);
-
-    open_download_url().await?;
-
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn open_faq_url() -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        Command::new("cmd")
-            .args(&["/c", "start", "https://spicetify.app/docs/faq/"])
-            .spawn()
-            .map_err(|e| format!("Failed to open URL: {}", e))?;
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        Command::new("open")
-            .arg("https://spicetify.app/docs/faq/")
-            .spawn()
-            .map_err(|e| format!("Failed to open URL: {}", e))?;
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        Command::new("xdg-open")
-            .arg("https://spicetify.app/docs/faq/")
-            .spawn()
-            .map_err(|e| format!("Failed to open URL: {}", e))?;
-    }
-
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn open_download_url() -> Result<(), String> {
-    let download_url = "https://github.com/FIREPAWER07/spicetify-installer/releases/latest";
-
-    #[cfg(target_os = "windows")]
-    {
-        Command::new("cmd")
-            .args(&["/c", "start", download_url])
-            .spawn()
-            .map_err(|e| format!("Failed to open download URL: {}", e))?;
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        Command::new("open")
-            .arg(download_url)
-            .spawn()
-            .map_err(|e| format!("Failed to open download URL: {}", e))?;
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        Command::new("xdg-open")
-            .arg(download_url)
-            .spawn()
-            .map_err(|e| format!("Failed to open download URL: {}", e))?;
-    }
-
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn check_spicetify_location() -> Result<String, String> {
-    let locations = vec![
-        "%LOCALAPPDATA%\\spicetify",
-        "%USERPROFILE%\\spicetify-cli",
-        "%APPDATA%\\spicetify",
-    ];
-
-    let mut result = String::new();
-    result.push_str("Checking for Spicetify in common locations:\n");
-
-    for location in locations {
-        let expanded_location = if cfg!(target_os = "windows") {
-            Command::new("cmd")
-                .creation_flags(0x08000000)
-                .args(&["/c", &format!("echo {}", location)])
-                .output()
-                .ok()
-                .and_then(|output| {
-                    if output.status.success() {
-                        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or_else(|| location.to_string())
-        } else {
-            location.to_string()
-        };
-
-        result.push_str(&format!("Checking: {}\n", expanded_location));
-
-        let exists = if cfg!(target_os = "windows") {
-            Command::new("cmd")
-                .creation_flags(0x08000000)
-                .args(&["/c", &format!("if exist \"{}\" echo 1", expanded_location)])
-                .output()
-                .ok()
-                .and_then(|output| {
-                    if output.status.success() && !output.stdout.is_empty() {
-                        Some(true)
-                    } else {
-                        Some(false)
-                    }
-                })
-                .unwrap_or(false)
-        } else {
-            std::path::Path::new(&expanded_location).exists()
-        };
-
-        if exists {
-            result.push_str(&format!("FOUND: {}\n", expanded_location));
-        } else {
-            result.push_str(&format!("Not found: {}\n", expanded_location));
-        }
-    }
-
-    result.push_str("\nChecking PATH for spicetify:\n");
-    let path_check = if cfg!(target_os = "windows") {
-        Command::new("cmd")
-            .creation_flags(0x08000000)
-            .args(&["/c", "where spicetify 2>NUL"])
-            .output()
-    } else {
-        Command::new("sh")
-            .args(&["-c", "which spicetify 2>/dev/null"])
-            .output()
-    };
-
-    match path_check {
-        Ok(output) => {
-            if output.status.success() {
-                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                result.push_str(&format!("Spicetify found in PATH: {}\n", path));
-            } else {
-                result.push_str("Spicetify NOT found in PATH\n");
-            }
-        }
-        Err(e) => {
-            result.push_str(&format!("Error checking PATH: {}\n", e));
-        }
-    }
-
-    Ok(result)
-}
-
-#[tauri::command]
-pub async fn check_for_app_updates(app_handle: AppHandle) -> Result<UpdateInfo, String> {
-    let update_manager = UpdateManager::new(app_handle);
-    update_manager.check_for_updates().await
-}
-
-#[tauri::command]
-pub async fn download_and_install_update(
-    app_handle: AppHandle,
-    download_url: String,
-) -> Result<(), String> {
-    let update_manager = UpdateManager::new(app_handle);
-    update_manager.download_and_install_update(download_url).await
-}
-
-#[tauri::command]
-pub async fn restart_application(app_handle: AppHandle) -> Result<(), String> {
-    let current_exe = std::env::current_exe()
-        .map_err(|e| format!("Failed to get executable path: {}", e))?;
-
-    std::process::Command::new(&current_exe)
-        .spawn()
-        .map_err(|e| format!("Failed to restart application: {}", e))?;
-
-    app_handle.exit(0);
-    Ok(())
 }

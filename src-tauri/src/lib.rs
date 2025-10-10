@@ -9,6 +9,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::execute_powershell_command,
             commands::check_versions,
+            commands::check_for_spicetify_updates,
+            commands::install_spicetify_direct,
             commands::open_faq_url,
             commands::open_download_url,
             commands::check_spicetify_location,
