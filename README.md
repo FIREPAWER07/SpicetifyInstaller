@@ -111,3 +111,20 @@ Follow the repo and check the releases page for the latest updates. Thanks for s
     </td>
   </tr>
 </table>
+
+### 🖼️ SendDisImages
+
+<table>
+  <tr>
+    <td width="200">
+      <a href="https://github.com/FIREPAWER07/SendDisImages">
+        <img src="https" alt="SendDisImages Logo" width="180">
+      </a>
+    </td>
+    <td>
+      A modern, interactive web app designed for degenerates who want to explore, track, and share their personal preferences—with style, efficiency, and full customization.  
+      <br><br>
+      🔗 <a href="https://github.com/FIREPAWER07/SendDisImages">Check it out here!</a>
+    </td>
+  </tr>
+</table>
