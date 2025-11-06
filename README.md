@@ -122,7 +122,7 @@ Follow the repo and check the releases page for the latest updates. Thanks for s
       </a>
     </td>
     <td>
-      A **modern, lightweight desktop app** that lets you easily send one or multiple high-quality images to Discord channels through your bot — with **smart compression**, **Nitro mode support**, and **a clean, responsive UI**.  
+      A modern, lightweight desktop app that lets you easily send one or multiple high-quality images to Discord channels through your bot — with smart compression, Nitro mode support, and a clean, responsive UI.  
       <br><br>
       🔗 <a href="https://github.com/FIREPAWER07/SendDisImages">Check it out here!</a>
     </td>
