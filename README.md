@@ -118,7 +118,7 @@ Follow the repo and check the releases page for the latest updates. Thanks for s
   <tr>
     <td width="200">
       <a href="https://github.com/FIREPAWER07/SendDisImages">
-        <img src="https://i.imgur.com/YOURBANNER.png" alt="SendDisImages Logo" width="180">
+        <img src="https://i.imgur.com/t0W1fvu.png" alt="SendDisImages Logo" width="180">
       </a>
     </td>
     <td>
