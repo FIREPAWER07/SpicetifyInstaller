@@ -1,23 +1,40 @@
+mod archive;
 mod commands;
-mod update_manager;
+mod download;
+mod error;
+mod github;
+mod ops;
+mod paths;
+mod platform;
+mod progress;
+mod spicetify;
 
-pub use commands::*;
-pub use update_manager::*;
+use progress::OpState;
 
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_process::init());
+
+    // The self-update flow is handled by Tauri's official updater plugin, which
+    // verifies release signatures against the pubkey in tauri.conf.json.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
+
+    builder
+        .manage(OpState::default())
         .invoke_handler(tauri::generate_handler![
-            commands::execute_powershell_command,
-            commands::check_versions,
-            commands::check_for_spicetify_updates,
-            commands::install_spicetify_direct,
-            commands::open_faq_url,
-            commands::open_download_url,
-            commands::check_spicetify_location,
-            commands::download_update,
-            commands::check_for_app_updates,
-            commands::download_and_install_update,
-            commands::restart_application
+            commands::get_status,
+            commands::check_spicetify_update,
+            commands::cancel_operation,
+            commands::is_operation_running,
+            commands::install_spicetify,
+            commands::backup_spotify,
+            commands::repair_spicetify,
+            commands::apply_spicetify,
+            commands::uninstall_spicetify,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

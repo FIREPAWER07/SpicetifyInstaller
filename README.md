@@ -29,9 +29,47 @@ An **unofficial** Spicetify installer built with [Tauri](https://tauri.app/) for
 ---
 
 ## 🚀 Features
-- **One-click** Installation / Repair / Backup / Uninstall of Spicetify and its dependencies
-- **Lightweight & Fast** – Powered by Tauri 🦀
-- **Clean & Modern UI** for an intuitive user experience
+- **Status-first control center** – see at a glance whether Spotify and Spicetify are installed, up to date, and backed up, plus the recommended next action.
+- **One-click** Install / Update / Apply / Repair / Backup / Uninstall.
+- **Native operations, no terminal** – downloads, extraction, and PATH setup are done directly in Rust. No hidden CMD/PowerShell scripts for normal use.
+- **Real progress & control** – accurate download/extract progress, cancellation, automatic retries on network hiccups, and cleanup of partial files so your system is never left half-configured.
+- **Friendly errors + technical logs** – clear messages up front, with a collapsible log view for advanced users.
+- **Lightweight & Fast** – Powered by Tauri 🦀 with a React + Tailwind UI.
+- **Accessible** – keyboard navigation, visible focus states, tooltips, and reduced-motion support.
+
+---
+
+## 🧱 Tech Stack
+- **Backend:** Rust + Tauri 2 (native download/extract/registry, streaming progress, cancellation tokens).
+- **Frontend:** React 18, TypeScript, Tailwind CSS v4, Framer Motion, react-icons.
+- **Auto-update:** Tauri's official updater plugin, verifying signed releases against a public key.
+
+---
+
+## 🔄 Auto-Update & Releasing
+The app updates itself through Tauri's updater, which reads the signed `latest.json`
+manifest from this repo's latest GitHub release.
+
+**One-time setup (already done):** a signing keypair was generated with
+`bun run tauri signer generate`. The **public** key lives in
+`src-tauri/tauri.conf.json` (`plugins.updater.pubkey`). The **private** key must be
+kept secret and added to the repository as GitHub Actions secrets:
+
+- `TAURI_SIGNING_PRIVATE_KEY` – contents of the generated `.key` file
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` – its password (empty if none)
+
+**To ship an update:** bump the version in `src-tauri/tauri.conf.json` and
+`Cargo.toml`, then push a tag:
+
+```bash
+git tag v2.1.0 && git push origin v2.1.0
+```
+
+The [release workflow](.github/workflows/release.yml) builds, signs, and publishes
+the installer plus `latest.json`. Users get an in-app "Update app" prompt on next launch.
+
+> ⚠️ If the private key is lost, published updates can no longer be signed and
+> auto-update will break. Back it up securely.
 
 ---
 
@@ -47,13 +85,13 @@ Grab the latest release from the **[Releases](https://github.com/FIREPAWER07/Spi
 ---
 
 ## ❗ Known Issues
-- **Slow installation** (Unfixable, Spicetify download is slow even without the installer)
+- Download speed depends on GitHub / your connection; the installer now streams with progress and retries, but very slow links are still slow.
+- Windows only for now (macOS & Linux are on the roadmap).
 ---
 
 ## 🔮 Future Planned Updates!
 - 🚀 **Linux and macOS support**
-- ⚡ **Faster Downloads**
-- 💡 **Lighter App**
+- 🧩 **Theme & extension management**
 - ✨ **AND MUCH MORE!**
 
 ---
