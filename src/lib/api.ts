@@ -17,6 +17,13 @@ export interface SpicetifyUpdate {
   update_available: boolean;
 }
 
+export interface InstallerUpdate {
+  current_version: string;
+  latest_version: string;
+  download_url: string;
+  update_available: boolean;
+}
+
 export interface Progress {
   stage: string;
   percent: number | null;
@@ -51,6 +58,7 @@ export function toAppError(e: unknown): AppError {
 
 export const getStatus = () => invoke<Status>("get_status");
 export const checkSpicetifyUpdate = () => invoke<SpicetifyUpdate>("check_spicetify_update");
+export const checkInstallerUpdate = () => invoke<InstallerUpdate>("check_installer_update");
 export const cancelOperation = () => invoke<void>("cancel_operation");
 
 export const installSpicetify = (marketplace: boolean) =>
@@ -59,18 +67,8 @@ export const backupSpotify = () => invoke<string>("backup_spotify");
 export const repairSpicetify = () => invoke<string>("repair_spicetify");
 export const applySpicetify = () => invoke<string>("apply_spicetify");
 export const uninstallSpicetify = () => invoke<string>("uninstall_spicetify");
-
-/** Human-readable byte size, e.g. 1536 → "1.5 KB". */
-export function humanBytes(n: number): string {
-  const units = ["B", "KB", "MB", "GB"];
-  let v = n;
-  let u = 0;
-  while (v >= 1024 && u < units.length - 1) {
-    v /= 1024;
-    u += 1;
-  }
-  return u === 0 ? `${n} B` : `${v.toFixed(1)} ${units[u]}`;
-}
+export const installInstallerUpdate = (downloadUrl: string) =>
+  invoke<string>("install_installer_update", { downloadUrl });
 
 // ---- Events ----------------------------------------------------------------
 

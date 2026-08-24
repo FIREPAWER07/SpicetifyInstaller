@@ -1,8 +1,8 @@
 name: Release
 
-# Build, sign, and publish a release whenever a version tag is pushed (e.g. v2.1.0).
-# tauri-action produces the signed installer plus the `latest.json` updater
-# manifest that the in-app updater reads from the latest GitHub release.
+# On a version tag (e.g. v2.0.2), build the standalone portable executable and
+# publish it as a GitHub release asset named SpicetifyInstaller.exe. The app's
+# built-in updater downloads this asset by that fixed name and swaps itself in.
 
 on:
   push:
@@ -29,17 +29,22 @@ jobs:
       - name: Install frontend dependencies
         run: bun install
 
-      - name: Build, sign, and publish
-        uses: tauri-apps/tauri-action@v0
+      - name: Build portable executable
+        run: bun run tauri build --no-bundle
+
+      - name: Stage portable exe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist-release | Out-Null
+          Copy-Item "src-tauri/target/release/spicetify-installer.exe" "dist-release/SpicetifyInstaller.exe"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Private signing key + password, stored as repository secrets.
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          # The signing key was generated without a password, so pass an empty
-          # one literally (the key can't be decrypted with any non-empty value).
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Spicetify Installer ${{ github.ref_name }}"
-          releaseDraft: false
+          tag_name: ${{ github.ref_name }}
+          name: "Spicetify Installer ${{ github.ref_name }}"
+          files: dist-release/SpicetifyInstaller.exe
+          draft: false
           prerelease: false

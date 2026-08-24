@@ -41,6 +41,10 @@ impl Reporter {
         self.token.clone()
     }
 
+    pub fn app_handle(&self) -> AppHandle {
+        self.app.clone()
+    }
+
     pub fn is_cancelled(&self) -> bool {
         self.token.is_cancelled()
     }

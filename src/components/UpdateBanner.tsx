@@ -1,11 +1,10 @@
 import { motion } from "framer-motion";
 import { LuCircleArrowUp, LuSparkles } from "react-icons/lu";
 import { Button } from "./ui/Button";
-import type { SpicetifyUpdate } from "../lib/api";
-import type { AppUpdateInfo } from "../lib/appUpdate";
+import type { InstallerUpdate, SpicetifyUpdate } from "../lib/api";
 
 interface UpdateBannerProps {
-  app: AppUpdateInfo | null;
+  app: InstallerUpdate | null;
   spicetify: SpicetifyUpdate | null;
   onUpdateApp: () => void;
   onUpdateSpicetify: () => void;
@@ -19,14 +18,14 @@ export function UpdateBanner({
   onUpdateSpicetify,
   reduceMotion,
 }: UpdateBannerProps) {
-  const appUpdate = app?.available ? app : null;
+  const appUpdate = app?.update_available ? app : null;
   const spiceUpdate = spicetify?.update_available ? spicetify : null;
   if (!appUpdate && !spiceUpdate) return null;
 
   // Prefer surfacing the app update; Spicetify updates are also reachable from
   // the action grid, so only one banner shows at a time.
   const isApp = Boolean(appUpdate);
-  const version = isApp ? appUpdate!.version : spiceUpdate!.latest_version;
+  const version = isApp ? appUpdate!.latest_version : spiceUpdate!.latest_version;
 
   return (
     <motion.div

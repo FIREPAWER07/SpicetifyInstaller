@@ -25,11 +25,10 @@ import { useStatus } from "./hooks/useStatus";
 import { useSettings } from "./hooks/useSettings";
 import { useOperation } from "./hooks/useOperation";
 import { openExternal } from "./lib/openExternal";
-import { performAppUpdate } from "./lib/appUpdate";
 import {
   applySpicetify,
   backupSpotify,
-  humanBytes,
+  installInstallerUpdate,
   installSpicetify,
   isTauri,
   repairSpicetify,
@@ -66,25 +65,10 @@ export default function App() {
   const runRepair = () => op.run("Repair Spicetify", repairSpicetify);
   const runBackup = () => op.run("Back up Spotify", backupSpotify);
   const runUninstall = () => op.run("Uninstall Spicetify", uninstallSpicetify);
-  const runAppUpdate = () =>
-    op.runLocal("Update installer", ({ progress }) =>
-      performAppUpdate(
-        ({ downloaded, total }) =>
-          progress({
-            stage: "Downloading",
-            percent: total ? (downloaded / total) * 100 : null,
-            message: total
-              ? `${humanBytes(downloaded)} / ${humanBytes(total)}`
-              : humanBytes(downloaded),
-          }),
-        (stage) =>
-          progress({
-            stage,
-            percent: stage === "Installing" ? 100 : null,
-            message: `${stage}…`,
-          }),
-      ),
-    );
+  const runAppUpdate = () => {
+    if (!appUpdate?.update_available) return;
+    op.run("Update installer", () => installInstallerUpdate(appUpdate.download_url));
+  };
 
   // Recommendation is pure data derived from status; the CTA it maps to is
   // dispatched separately so handlers never go stale inside the memo.

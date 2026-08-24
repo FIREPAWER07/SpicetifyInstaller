@@ -13,6 +13,9 @@ use crate::spicetify;
 
 pub const SPICETIFY_REPO: &str = "spicetify/cli";
 pub const MARKETPLACE_REPO: &str = "spicetify/marketplace";
+pub const INSTALLER_REPO: &str = "FIREPAWER07/SpicetifyInstaller";
+/// Fixed asset name for the portable installer executable in each release.
+pub const INSTALLER_ASSET: &str = "SpicetifyInstaller.exe";
 
 /// Install or update Spicetify natively:
 /// download the arch-matched release zip, extract into `%LOCALAPPDATA%\spicetify`,

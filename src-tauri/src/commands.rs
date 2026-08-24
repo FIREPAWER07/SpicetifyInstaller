@@ -5,6 +5,7 @@ use crate::error::{AppError, AppResult};
 use crate::ops::{self, SpicetifyUpdate};
 use crate::progress::{OpState, Reporter};
 use crate::spicetify::{self, Status};
+use crate::updater::{self, InstallerUpdate};
 use std::future::Future;
 use tauri::{AppHandle, State};
 
@@ -32,6 +33,11 @@ pub async fn get_status() -> Status {
 #[tauri::command]
 pub async fn check_spicetify_update() -> AppResult<SpicetifyUpdate> {
     ops::check_spicetify_update().await
+}
+
+#[tauri::command]
+pub async fn check_installer_update() -> AppResult<InstallerUpdate> {
+    updater::check_installer_update().await
 }
 
 #[tauri::command]
@@ -71,5 +77,18 @@ pub async fn apply_spicetify(app: AppHandle, state: State<'_, OpState>) -> AppRe
 #[tauri::command]
 pub async fn uninstall_spicetify(app: AppHandle, state: State<'_, OpState>) -> AppResult<String> {
     guarded(app, state, |r| async move { ops::uninstall(&r).await }).await
+}
+
+#[tauri::command]
+pub async fn install_installer_update(
+    app: AppHandle,
+    state: State<'_, OpState>,
+    download_url: String,
+) -> AppResult<String> {
+    guarded(app, state, |r| async move {
+        updater::self_update(r.app_handle(), download_url, &r).await?;
+        Ok("Update started".into())
+    })
+    .await
 }
 

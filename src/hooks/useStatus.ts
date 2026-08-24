@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  checkInstallerUpdate,
   checkSpicetifyUpdate,
   getStatus,
   isTauri,
+  type InstallerUpdate,
   type SpicetifyUpdate,
   type Status,
 } from "../lib/api";
-import { checkAppUpdate, type AppUpdateInfo } from "../lib/appUpdate";
 
 export interface StatusState {
   loading: boolean;
   status: Status | null;
   spicetifyUpdate: SpicetifyUpdate | null;
-  appUpdate: AppUpdateInfo | null;
+  appUpdate: InstallerUpdate | null;
   error: string | null;
 }
 
@@ -45,7 +46,10 @@ export function useStatus() {
 
   const checkUpdates = useCallback(async () => {
     if (!isTauri) return;
-    const [spice, app] = await Promise.allSettled([checkSpicetifyUpdate(), checkAppUpdate()]);
+    const [spice, app] = await Promise.allSettled([
+      checkSpicetifyUpdate(),
+      checkInstallerUpdate(),
+    ]);
     setState((s) => ({
       ...s,
       spicetifyUpdate: spice.status === "fulfilled" ? spice.value : s.spicetifyUpdate,
