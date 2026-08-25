@@ -3464,7 +3464,7 @@ dependencies = [
 
 [[package]]
 name = "spicetify-installer"
-version = "2.0.4"
+version = "2.0.5"
 dependencies = [
  "futures-util",
  "reqwest 0.12.28",

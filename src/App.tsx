@@ -34,8 +34,7 @@ import {
   repairSpicetify,
   uninstallSpicetify,
 } from "./lib/api";
-
-const APP_VERSION = "2.0.0";
+import { version as APP_VERSION } from "../package.json";
 
 export default function App() {
   const { loading, status, spicetifyUpdate, appUpdate, refresh, checkUpdates } = useStatus();

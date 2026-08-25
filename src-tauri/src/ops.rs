@@ -129,10 +129,9 @@ async fn install_marketplace(client: &reqwest::Client, reporter: &Reporter) -> A
     )
     .await?;
 
-    let custom_apps = Paths::spicetify_config_dir()
-        .ok_or_else(|| AppError::Other("APPDATA not set".into()))?
-        .join("CustomApps")
-        .join("marketplace");
+    let config_dir =
+        Paths::spicetify_config_dir().ok_or_else(|| AppError::Other("APPDATA not set".into()))?;
+    let custom_apps = config_dir.join("CustomApps").join("marketplace");
     archive::extract_zip(
         zip.clone(),
         custom_apps,
@@ -141,6 +140,19 @@ async fn install_marketplace(client: &reqwest::Client, reporter: &Reporter) -> A
     )
     .await?;
     let _ = tokio::fs::remove_file(&zip).await;
+
+    // Create the placeholder "marketplace" theme. current_theme=marketplace
+    // (below) makes `spicetify apply` resolve a theme by that name; without the
+    // folder + color.ini apply fails "Theme marketplace not found" and the whole
+    // Marketplace step is skipped. Mirrors the official install.ps1, which writes
+    // a color.ini containing a single [Marketplace] section.
+    let market_theme = config_dir.join("Themes").join("marketplace");
+    tokio::fs::create_dir_all(&market_theme)
+        .await
+        .map_err(|e| AppError::Other(format!("Could not create Marketplace theme dir: {e}")))?;
+    tokio::fs::write(market_theme.join("color.ini"), "[Marketplace]\n\n")
+        .await
+        .map_err(|e| AppError::Other(format!("Could not write Marketplace color.ini: {e}")))?;
 
     // Register the custom app and enable the CSS/theme injection Marketplace
     // relies on, then point the active theme at "marketplace". Without
