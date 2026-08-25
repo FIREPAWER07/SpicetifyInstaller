@@ -84,6 +84,21 @@ pub async fn install(marketplace: bool, reporter: &Reporter) -> AppResult<String
         .ok_or_else(|| AppError::Other("Spicetify executable missing after install".into()))?;
     reporter.info(format!("Verified spicetify.exe reports v{version}"));
 
+    // Apply Spicetify to Spotify. Restore first (best-effort — there's no backup
+    // on a first install) so the backup captures a vanilla Spotify, then
+    // backup + apply. This also refreshes Spicetify's preprocessed data, which
+    // otherwise leaves the Marketplace's apply failing with "data is outdated".
+    reporter.progress("Applying", None, "Applying Spicetify to Spotify...");
+    if let Err(e) = spicetify::run(&["restore"], "Applying", reporter).await {
+        reporter.info(format!("Restore skipped: {e}"));
+    }
+    check_cancel(reporter)?;
+    if let Err(e) = spicetify::run(&["backup", "apply"], "Applying", reporter).await {
+        reporter.warn(format!(
+            "Automatic apply failed: {e}. Use Repair if Spotify looks unchanged."
+        ));
+    }
+
     if marketplace {
         if let Err(e) = install_marketplace(&client, reporter).await {
             reporter.warn(format!("Marketplace step skipped: {e}"));
