@@ -142,7 +142,19 @@ async fn install_marketplace(client: &reqwest::Client, reporter: &Reporter) -> A
     .await?;
     let _ = tokio::fs::remove_file(&zip).await;
 
+    // Register the custom app and enable the CSS/theme injection Marketplace
+    // relies on, then point the active theme at "marketplace". Without
+    // current_theme=marketplace the app refuses to install themes ("Please set
+    // current_theme in config-xpui.ini to 'marketplace'"). Mirrors the official
+    // Marketplace install.ps1.
     spicetify::run(&["config", "custom_apps", "marketplace"], "Marketplace", reporter).await?;
+    spicetify::run(
+        &["config", "inject_css", "1", "replace_colors", "1"],
+        "Marketplace",
+        reporter,
+    )
+    .await?;
+    spicetify::run(&["config", "current_theme", "marketplace"], "Marketplace", reporter).await?;
     spicetify::run(&["apply"], "Marketplace", reporter).await?;
     reporter.info("Marketplace installed");
     Ok(())

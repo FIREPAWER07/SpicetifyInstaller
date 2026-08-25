@@ -1,6 +1,6 @@
 [package]
 name = "spicetify-installer"
-version = "2.0.3"
+version = "2.0.4"
 description = "An unofficial Spicetify manager built with Tauri. Install, update, repair, back up, and uninstall Spicetify with a modern desktop UI."
 authors = ["FIREPAWER07"]
 license = "GPL-3.0-only"

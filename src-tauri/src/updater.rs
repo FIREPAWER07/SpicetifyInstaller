@@ -68,16 +68,36 @@ pub async fn self_update(app: AppHandle, download_url: String, reporter: &Report
 }
 
 /// Batch helper: wait for our PID to exit, replace the exe, relaunch, self-delete.
+///
+/// The replace is retried in a loop: even after the process leaves the task list,
+/// the OS (or an antivirus scan) can briefly keep the old `.exe` locked, and a
+/// single `move` would fail. `move /y` deletes its source on success, so the
+/// absence of `{new}` is our proof the swap landed — we retry until then (bounded
+/// to ~30s) and only relaunch afterwards. Errors are logged next to the helper.
 fn swap_script(current: &std::path::Path, new: &std::path::Path, pid: u32) -> String {
     format!(
         "@echo off\r\n\
+         setlocal enabledelayedexpansion\r\n\
+         set \"log=%~dp0spicetify-installer-update.log\"\r\n\
+         set /a tries=0\r\n\
          :waitloop\r\n\
          tasklist /fi \"PID eq {pid}\" 2>nul | findstr /i \" {pid} \" >nul\r\n\
          if not errorlevel 1 (\r\n\
            ping -n 2 127.0.0.1 >nul\r\n\
            goto waitloop\r\n\
          )\r\n\
-         move /y \"{new}\" \"{current}\" >nul\r\n\
+         rem Let the OS release the just-exited executable before overwriting it.\r\n\
+         ping -n 3 127.0.0.1 >nul\r\n\
+         :movetry\r\n\
+         move /y \"{new}\" \"{current}\" >>\"%log%\" 2>&1\r\n\
+         if not exist \"{new}\" goto launch\r\n\
+         set /a tries+=1\r\n\
+         if !tries! lss 30 (\r\n\
+           ping -n 2 127.0.0.1 >nul\r\n\
+           goto movetry\r\n\
+         )\r\n\
+         echo Giving up after !tries! attempts; relaunching existing version. >>\"%log%\"\r\n\
+         :launch\r\n\
          start \"\" \"{current}\"\r\n\
          del \"%~f0\"\r\n",
         pid = pid,
@@ -89,11 +109,15 @@ fn swap_script(current: &std::path::Path, new: &std::path::Path, pid: u32) -> St
 #[cfg(windows)]
 fn spawn_detached(script: &std::path::Path) -> AppResult<()> {
     use std::os::windows::process::CommandExt;
+    // CREATE_NO_WINDOW alone: the helper gets an *invisible* console that its
+    // child console tools (tasklist/ping/move/start) inherit, so nothing flashes.
+    // DETACHED_PROCESS is deliberately NOT used — a detached helper has no console
+    // at all, which makes every child allocate its own visible window. Windows
+    // does not kill this child when we exit, so it outlives us as required.
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
     std::process::Command::new("cmd")
         .args(["/c", &script.to_string_lossy()])
-        .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
+        .creation_flags(CREATE_NO_WINDOW)
         .spawn()
         .map_err(|e| AppError::Other(format!("Failed to start update helper: {e}")))?;
     Ok(())
